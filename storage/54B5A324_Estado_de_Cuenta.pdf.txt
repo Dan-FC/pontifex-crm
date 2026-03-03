@@ -1,0 +1,17 @@
+=======================================
+REPORTE DE ESTADO DE CUENTA (PONTIFEX)
+=======================================
+Archivo: Estado de Cuenta.pdf
+Fecha Proceso: 2026-02-27
+ID Caso: 54B5A324
+
+--- RESUMEN ---
+Saldo Anterior:   $1,760.19
+Saldo Final:      $2,116.25
+Ingresos Totales: $0.00
+Egresos Totales:  $0.00
+
+--- MOVIMIENTOS DETECTADOS ---
+(No se detectaron movimientos individuales con el formato esperado)
+
+=======================================

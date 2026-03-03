@@ -1,0 +1,63 @@
+// This is your Prisma schema file.
+// In Prisma 7, the database URL is configured in prisma.config.ts, not here.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ── Expediente (caso central) ─────────────────────────────────────────────────
+model Expediente {
+  id                  String   @id @default(cuid())
+  cliente             String
+  rfc                 String   @default("")
+  sector              String   @default("")
+  email               String   @default("")
+  telefono            String   @default("")
+  contacto            String   @default("")
+  ejecutivo           String
+  tipoFinanciamiento  String
+  montoSolicitado     String   @default("")
+  etapa               Int      @default(1)
+  etapaNombre         String   @default("Documentación")
+  situacion           String   @default("En curso")
+  completitud         Int      @default(0)
+  observaciones       String   @default("")
+  alertas             String   @default("[]")
+  fechaAlta           DateTime @default(now())
+  ultimaActualizacion DateTime @updatedAt
+
+  documentos     Documento[]
+  completitudLog CompletitudLog[]
+}
+
+// ── Documento vinculado al expediente ─────────────────────────────────────────
+model Documento {
+  id           String   @id @default(cuid())
+  expedienteId String
+  nombre       String
+  tipo         String   @default("Estado de cuenta bancario")
+  estatus      String   @default("Pendiente")
+  fecha        DateTime @default(now())
+  ingresos     String?
+  egresos      String?
+  movimientos  Int      @default(0)
+  rawTxt       String?
+  archivoPath  String?
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+}
+
+// ── Log de completitud por cálculo ────────────────────────────────────────────
+model CompletitudLog {
+  id           String   @id @default(cuid())
+  expedienteId String
+  totalPct     Int
+  categorias   String
+  creadoEn     DateTime @default(now())
+
+  expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+}
