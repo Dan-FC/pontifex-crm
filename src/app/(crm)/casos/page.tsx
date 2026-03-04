@@ -318,14 +318,19 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
 interface UploadedDocInfo {
     nombre: string;
     estatus: string;
-    url?: string;       // URL pública de Supabase Storage
+    url?: string;
+    // Bank statement OCR
     ingresos?: string;
     egresos?: string;
     periodo?: string;
     movimientos?: string;
     txtContent?: string;
     txtFilename?: string;
+    // Financial statement OCR
+    financialData?: any;
 }
+
+const FINANCIAL_STATEMENT_IDS = ["estados-fin-2019", "estados-fin-2020", "estado-fin-parcial"];
 
 function DocUploadPanel({
     docId, docNombre, casoId,
@@ -337,6 +342,7 @@ function DocUploadPanel({
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState("");
     const isBankStatement = docId === "estados-cuenta-banco";
+    const isFinancialStatement = FINANCIAL_STATEMENT_IDS.includes(docId);
 
     const handleFile = async (f: File) => {
         if (!f || f.type !== "application/pdf") { setError("Solo archivos PDF."); return; }
@@ -348,14 +354,12 @@ function DocUploadPanel({
             formData.append("nombre", f.name);
 
             if (isBankStatement) {
-                // 1. OCR analysis
                 const ocrForm = new FormData();
                 ocrForm.append("pdf", f);
                 const ocrRes = await fetch("/api/process-pdf", { method: "POST", body: ocrForm });
                 const ocrData = await ocrRes.json();
                 if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
 
-                // 2. Upload file + register in DB (gets Supabase URL)
                 formData.append("estatus", "Procesado");
                 const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
                 const regData = await regRes.json();
@@ -371,8 +375,26 @@ function DocUploadPanel({
                     txtContent: ocrData.txtContent,
                     txtFilename: ocrData.txtFilename,
                 });
+            } else if (isFinancialStatement) {
+                // 1. OCR del estado financiero
+                const ocrForm = new FormData();
+                ocrForm.append("pdf", f);
+                const ocrRes = await fetch("/api/process-financial-statement", { method: "POST", body: ocrForm });
+                const ocrData = await ocrRes.json();
+                if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
+
+                // 2. Registrar en DB y subir a Supabase
+                formData.append("estatus", "Procesado");
+                const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
+                const regData = await regRes.json();
+                if (!regRes.ok) throw new Error(regData.error || "Error al registrar");
+
+                onSuccess({
+                    nombre: f.name, estatus: "Procesado",
+                    url: regData.data?.url,
+                    financialData: ocrData.data,
+                });
             } else {
-                // Upload file + register in DB
                 formData.append("estatus", "Entregado");
                 const res = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
                 const data = await res.json();
@@ -383,21 +405,33 @@ function DocUploadPanel({
         finally { setUploading(false); }
     };
 
+    const uploadLabel = isBankStatement
+        ? "Subir estado de cuenta (PDF)"
+        : isFinancialStatement
+            ? `Subir ${docNombre} (PDF)`
+            : `Subir ${docNombre.split("/")[0].trim()} (PDF)`;
+
+    const uploadHint = isBankStatement
+        ? "Se extraerán los datos financieros automáticamente"
+        : isFinancialStatement
+            ? "Se extraerán Balance General, Estado de Resultados y KPIs"
+            : null;
+
+    const loadingLabel = (isBankStatement || isFinancialStatement) ? "Analizando con OCR…" : "Registrando documento…";
+
     return (
         <div className="mt-2 ml-8 mr-2">
             {uploading ? (
                 <div className="flex items-center gap-2 py-3 px-4 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-600 font-semibold">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    {isBankStatement ? "Procesando con OCR…" : "Registrando documento…"}
+                    {loadingLabel}
                 </div>
             ) : (
                 <label className="flex items-center gap-3 py-3 px-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all">
                     <UploadCloud className="w-5 h-5 text-blue-400 flex-shrink-0" />
                     <div>
-                        <p className="text-xs font-semibold text-blue-600">
-                            {isBankStatement ? "Subir estado de cuenta (PDF)" : `Subir ${docNombre.split("/")[0].trim()} (PDF)`}
-                        </p>
-                        {isBankStatement && <p className="text-xs text-gray-400">Se extraerán los datos financieros automáticamente</p>}
+                        <p className="text-xs font-semibold text-blue-600">{uploadLabel}</p>
+                        {uploadHint && <p className="text-xs text-gray-400">{uploadHint}</p>}
                     </div>
                     <input type="file" accept="application/pdf" className="hidden"
                         onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
@@ -512,6 +546,159 @@ function BankStatementPreview({ info, casoId }: { info: UploadedDocInfo; casoId:
     );
 }
 
+// ─── FinancialStatementPreview ────────────────────────────────────────────────
+function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
+    const d = info.financialData;
+    if (!d) return null;
+    const bg = d.balanceGeneral;
+    const er = d.estadoResultados;
+    const kp = d.kpis;
+
+    const fmt = (v: number | null) =>
+        v !== null ? `$${v.toLocaleString("es-MX", { minimumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>;
+    const fmtPct = (v: number | null) =>
+        v !== null ? `${(v * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>;
+    const fmtX = (v: number | null) =>
+        v !== null ? `${v.toFixed(2)}x` : <span className="text-gray-300">—</span>;
+    const fmtDias = (v: number | null) =>
+        v !== null ? `${Math.round(v)} días` : <span className="text-gray-300">—</span>;
+
+    const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+        <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
+            <span className="text-xs text-gray-500">{label}</span>
+            <span className="text-xs font-semibold text-gray-800">{value}</span>
+        </div>
+    );
+
+    const SectionTitle = ({ title, color }: { title: string; color: string }) => (
+        <p className={`text-xs font-bold uppercase tracking-wide mb-2 mt-3 first:mt-0 ${color}`}>{title}</p>
+    );
+
+    return (
+        <div className="mt-4 space-y-4">
+            {/* Balance General + Estado de Resultados */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Balance General */}
+                <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
+                    <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
+                        <BarChart2 className="w-3.5 h-3.5 text-blue-600" />
+                        <span className="text-xs font-bold text-blue-700">Balance General</span>
+                        {d.periodos?.length > 0 && <span className="ml-auto text-xs text-blue-400">{d.periodos[d.periodos.length - 1]}</span>}
+                    </div>
+                    <div className="p-4">
+                        <SectionTitle title="Activo" color="text-emerald-600" />
+                        <Row label="Activo Circulante" value={fmt(bg.activoCirculante)} />
+                        <Row label="Inventarios" value={fmt(bg.inventarios)} />
+                        <Row label="Clientes" value={fmt(bg.clientes)} />
+                        <Row label="Deudores Diversos" value={fmt(bg.deudoresDiversos)} />
+                        <Row label="Activo Fijo" value={fmt(bg.activoFijo)} />
+                        <Row label="Terrenos y Edificios" value={fmt(bg.terrenosEdificios)} />
+                        <Row label="Maquinaria y Equipo" value={fmt(bg.maquinariaEquipo)} />
+                        <Row label="Equipo de Transporte" value={fmt(bg.equipoTransporte)} />
+                        <Row label="Otros Activos" value={fmt(bg.otrosActivos)} />
+                        <Row label="Intangibles" value={fmt(bg.intangibles)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-emerald-50 rounded-lg px-2">
+                            <span className="text-xs font-bold text-emerald-700">ACTIVO TOTAL</span>
+                            <span className="text-sm font-extrabold text-emerald-700">{fmt(bg.activoTotal)}</span>
+                        </div>
+
+                        <SectionTitle title="Pasivo" color="text-red-600" />
+                        <Row label="Pasivo Circulante" value={fmt(bg.pasivoCirculante)} />
+                        <Row label="Proveedores" value={fmt(bg.proveedores)} />
+                        <Row label="Acreedores Div." value={fmt(bg.acreedoresDiversos)} />
+                        <Row label="Docs. x pagar CP" value={fmt(bg.docsPagarCP)} />
+                        <Row label="Pasivo Largo Plazo" value={fmt(bg.pasivoLargoPlazo)} />
+                        <Row label="Docs. x pagar LP" value={fmt(bg.docsPagarLP)} />
+                        <Row label="Otros Pasivos" value={fmt(bg.otrosPasivos)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-red-50 rounded-lg px-2">
+                            <span className="text-xs font-bold text-red-700">PASIVO TOTAL</span>
+                            <span className="text-sm font-extrabold text-red-700">{fmt(bg.pasivoTotal)}</span>
+                        </div>
+
+                        <SectionTitle title="Capital" color="text-indigo-600" />
+                        <Row label="Capital Social" value={fmt(bg.capitalSocial)} />
+                        <Row label="Ut. Ejercicios anteriores" value={fmt(bg.utilidadesAnteriores)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-indigo-50 rounded-lg px-2">
+                            <span className="text-xs font-bold text-indigo-700">CAPITAL CONTABLE</span>
+                            <span className="text-sm font-extrabold text-indigo-700">{fmt(bg.capitalContable)}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Estado de Resultados */}
+                <div className="bg-white border border-purple-100 rounded-xl overflow-hidden shadow-sm">
+                    <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
+                        <BarChart2 className="w-3.5 h-3.5 text-purple-600" />
+                        <span className="text-xs font-bold text-purple-700">Estado de Resultados</span>
+                    </div>
+                    <div className="p-4">
+                        <Row label="VENTAS" value={fmt(er.ventas)} />
+                        <Row label="Costos de Venta" value={fmt(er.costoVenta)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-emerald-50 rounded-lg px-2 mb-2">
+                            <span className="text-xs font-bold text-emerald-700">Ut. Bruta</span>
+                            <span className="text-sm font-extrabold text-emerald-700">{fmt(er.utilidadBruta)}</span>
+                        </div>
+                        <Row label="Gastos de Op." value={fmt(er.gastosOperacion)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-blue-50 rounded-lg px-2 mb-2">
+                            <span className="text-xs font-bold text-blue-700">UT. de Operación</span>
+                            <span className="text-sm font-extrabold text-blue-700">{fmt(er.utilidadOperacion)}</span>
+                        </div>
+                        <Row label="Gastos Fin." value={fmt(er.gastosFinancieros)} />
+                        <Row label="Otros Productos" value={fmt(er.otrosProductos)} />
+                        <Row label="Otros Gastos" value={fmt(er.otrosGastos)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-amber-50 rounded-lg px-2 mb-2">
+                            <span className="text-xs font-bold text-amber-700">UT. Antes de Impuestos</span>
+                            <span className="text-sm font-extrabold text-amber-700">{fmt(er.utilidadAntesImpuestos)}</span>
+                        </div>
+                        <Row label="Impuestos" value={fmt(er.impuestos)} />
+                        <Row label="Depreciación" value={fmt(er.depreciacion)} />
+                        <div className="flex justify-between items-center py-1.5 mt-1 bg-purple-50 rounded-lg px-2">
+                            <span className="text-xs font-bold text-purple-700">UTILIDAD NETA</span>
+                            <span className="text-sm font-extrabold text-purple-700">{fmt(er.utilidadNeta)}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* KPIs */}
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
+                    <BarChart2 className="w-3.5 h-3.5 text-gray-600" />
+                    <span className="text-xs font-bold text-gray-700">KPIs calculados automáticamente</span>
+                </div>
+                <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                        { label: "Liquidez Circulante", value: fmtX(kp.liquidezCirculante), color: "blue" },
+                        { label: "Prueba del Ácido", value: fmtX(kp.pruebaAcido), color: "blue" },
+                        { label: "Rotación CxC", value: fmtX(kp.rotacionCxC), color: "emerald" },
+                        { label: "Rotación CxP", value: fmtDias(kp.rotacionCxP), color: "emerald" },
+                        { label: "Rotación Inventarios", value: fmtDias(kp.rotacionInventarios), color: "emerald" },
+                        { label: "Deuda Total", value: fmtPct(kp.deudaTotal), color: "amber" },
+                        { label: "Deuda / Capital", value: fmtX(kp.deudaCapital), color: "amber" },
+                        { label: "Deuda LP", value: fmtX(kp.deudaLP), color: "amber" },
+                        { label: "Margen Utilidad", value: fmtPct(kp.margenUtilidad), color: "purple" },
+                        { label: "ROA", value: fmtPct(kp.roa), color: "purple" },
+                        { label: "ROE", value: fmtPct(kp.roe), color: "purple" },
+                    ].map(({ label, value, color }) => {
+                        const colors: Record<string, string> = {
+                            blue: "bg-blue-50 border-blue-100 text-blue-700",
+                            emerald: "bg-emerald-50 border-emerald-100 text-emerald-700",
+                            amber: "bg-amber-50 border-amber-100 text-amber-700",
+                            purple: "bg-purple-50 border-purple-100 text-purple-700",
+                        };
+                        return (
+                            <div key={label} className={`rounded-xl border p-3 ${colors[color]}`}>
+                                <p className="text-xs opacity-70 mb-1">{label}</p>
+                                <p className="text-base font-extrabold">{value}</p>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 // ─── Tab: Documentos ──────────────────────────────────────────────────────────
 function TabDocumentos({ caso }: { caso: Case }) {
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
@@ -569,6 +756,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                         const isSelected = selectedDocId === doc.id;
                                         const uploadedInfo = uploaded[doc.id];
                                         const isBankStatement = doc.id === "estados-cuenta-banco";
+                                        const isFinancialStatement = FINANCIAL_STATEMENT_IDS.includes(doc.id);
 
                                         return (
                                             <li key={doc.id}>
@@ -588,7 +776,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                     }
                                                     <span className={`text-sm flex-1 ${entregado ? "text-gray-700" : isSelected ? "text-blue-700 font-medium" : "text-gray-500"}`}>
                                                         {doc.nombre}
-                                                        {isBankStatement && !entregado && (
+                                                        {(isBankStatement || isFinancialStatement) && !entregado && (
                                                             <span className="ml-2 text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">OCR</span>
                                                         )}
                                                     </span>
@@ -632,6 +820,13 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                                 {isBankStatement && !uploadedInfo && dbDocs.some(d => d.estatus === "Procesado") && (
                                                                     <p className="text-xs text-gray-400 mt-2 italic">Estado de cuenta procesado por OCR previamente. Sube uno nuevo para ver el preview.</p>
                                                                 )}
+                                                                {/* Financial statement OCR preview */}
+                                                                {isFinancialStatement && uploadedInfo?.financialData && (
+                                                                    <FinancialStatementPreview info={uploadedInfo} />
+                                                                )}
+                                                                {isFinancialStatement && !uploadedInfo && dbDocs.some(d => d.tipo === doc.id && d.estatus === "Procesado") && (
+                                                                    <p className="text-xs text-gray-400 mt-2 italic">Documento procesado anteriormente. Sube uno nuevo para ver el análisis.</p>
+                                                                )}
                                                             </div>
                                                         ) : (
                                                             <DocUploadPanel
@@ -640,19 +835,22 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                                 casoId={caso.id}
                                                                 onSuccess={info => {
                                                                     setUploaded(prev => ({ ...prev, [doc.id]: info }));
-                                                                    if (isBankStatement) {
-                                                                        // Keep panel open to show preview
-                                                                    } else {
+                                                                    if (!isBankStatement && !isFinancialStatement) {
                                                                         setSelectedDocId(null);
                                                                     }
                                                                 }}
                                                             />
                                                         )}
 
-                                                        {/* Show OCR preview right after upload for bank statement */}
+                                                        {/* Show OCR preview right after upload */}
                                                         {isBankStatement && uploadedInfo && !entregado && (
                                                             <div className="ml-8 mr-2 mt-2">
                                                                 <BankStatementPreview info={uploadedInfo} casoId={caso.id} />
+                                                            </div>
+                                                        )}
+                                                        {isFinancialStatement && uploadedInfo?.financialData && !entregado && (
+                                                            <div className="ml-8 mr-2 mt-2">
+                                                                <FinancialStatementPreview info={uploadedInfo} />
                                                             </div>
                                                         )}
                                                     </div>
