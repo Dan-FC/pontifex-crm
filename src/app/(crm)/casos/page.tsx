@@ -12,6 +12,8 @@ import {
     MOCK_DOCUMENTOS, DOC_ESTATUS_COLORS,
     MOCK_INSTITUCIONES, COMPATIBILIDAD_COLORS,
 } from "@/lib/mock-data";
+import { CATEGORIAS_DOCUMENTOS, TOTAL_DOCUMENTOS_REQUERIDOS } from "@/lib/documentos-requeridos";
+
 
 // ── API type (matches Prisma Expediente) ─────────────────────────────────────
 type ApiExpediente = {
@@ -135,7 +137,52 @@ function Stepper({ etapaActual }: { etapaActual: number }) {
 }
 
 // ─── Tab: Resumen ─────────────────────────────────────────────────────────────
-function TabResumen({ caso }: { caso: Case }) {
+function fmtDate(iso: string) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" }); }
+    catch { return iso; }
+}
+function fmtMoney(v: string) {
+    if (!v) return "—";
+    if (v.startsWith("$")) return v;
+    const n = parseFloat(v.replace(/,/g, ""));
+    if (isNaN(n)) return v;
+    return n.toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 0 });
+}
+
+function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case) => void }) {
+    const [editing, setEditing] = useState(false);
+    const [editForm, setEditForm] = useState({
+        rfc: caso.rfc ?? "",
+        contacto: caso.contacto ?? "",
+        email: caso.email ?? "",
+        telefono: caso.telefono ?? "",
+        montoSolicitado: caso.montoSolicitado ?? "",
+        sector: caso.sector ?? "",
+    });
+    const [saving, setSaving] = useState(false);
+    const [saveMsg, setSaveMsg] = useState("");
+
+    const handleSave = async () => {
+        setSaving(true); setSaveMsg("");
+        try {
+            const res = await fetch(`/api/expedientes/${caso.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(editForm),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Error al guardar");
+            setSaveMsg("Guardado correctamente.");
+            setEditing(false);
+            onUpdate?.(json.data);
+        } catch (err: any) {
+            setSaveMsg(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
     return (
         <div className="space-y-5">
             {/* Header card */}
@@ -144,14 +191,19 @@ function TabResumen({ caso }: { caso: Case }) {
                     <div>
                         <div className="flex items-center gap-3 flex-wrap mb-1">
                             <h2 className="text-xl font-extrabold text-gray-900">{caso.cliente}</h2>
-                            <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full font-mono">{caso.id}</span>
                             <span className={`px-3 py-1 text-xs font-semibold rounded-full ${SITUACION_COLORS[caso.situacion]}`}>{caso.situacion}</span>
                         </div>
-                        <p className="text-sm text-gray-400">RFC: {caso.rfc} · Alta: {caso.fechaAlta} · Últ. actualización: {caso.ultimaActualizacion}</p>
+                        <p className="text-sm text-gray-400">
+                            RFC: <span className={`font-mono font-semibold ${caso.rfc ? "text-gray-700" : "text-red-400 italic"}`}>{caso.rfc || "Sin RFC — edita los datos"}</span>
+                            <span className="mx-2 text-gray-200">·</span>
+                            Alta: {fmtDate(caso.fechaAlta)}
+                            <span className="mx-2 text-gray-200">·</span>
+                            Actualizado: {fmtDate(caso.ultimaActualizacion)}
+                        </p>
                     </div>
                     <div className="text-right">
                         <p className="text-xs text-gray-400 mb-0.5">Monto solicitado</p>
-                        <p className="text-2xl font-extrabold text-indigo-600">{caso.montoSolicitado}</p>
+                        <p className="text-2xl font-extrabold text-indigo-600">{fmtMoney(caso.montoSolicitado)}</p>
                         <p className="text-xs text-gray-400">{caso.tipoFinanciamiento}</p>
                     </div>
                 </div>
@@ -168,106 +220,212 @@ function TabResumen({ caso }: { caso: Case }) {
                 <Stepper etapaActual={caso.etapa} />
             </div>
 
-            {/* Info + Alertas */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4 flex items-center gap-1.5"><User className="w-3.5 h-3.5" />Información del expediente</p>
-                    <div className="grid grid-cols-2 gap-3">
-                        {[
-                            { l: "Ejecutivo", v: caso.ejecutivo },
-                            { l: "Sector", v: caso.sector },
-                            { l: "Correo", v: caso.email },
-                            { l: "Teléfono", v: caso.telefono },
-                            { l: "Etapa actual", v: caso.etapaNombre },
-                        ].map(({ l, v }) => (
-                            <div key={l}>
-                                <p className="text-xs text-gray-400">{l}</p>
-                                <p className="text-sm font-semibold text-gray-800">{v}</p>
+            {/* Datos editables */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5" />Datos del expediente
+                    </p>
+                    {!editing ? (
+                        <button onClick={() => setEditing(true)}
+                            className="text-xs text-blue-600 hover:text-blue-700 font-semibold px-3 py-1.5 border border-blue-100 rounded-lg hover:bg-blue-50 transition-all">
+                            ✏️ Editar
+                        </button>
+                    ) : (
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setEditing(false)}
+                                className="text-xs text-gray-500 font-semibold px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-all">Cancelar</button>
+                            <button onClick={handleSave} disabled={saving}
+                                className="text-xs text-white font-semibold px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50 flex items-center gap-1 transition-all">
+                                {saving ? <><Loader2 className="w-3 h-3 animate-spin" />Guardando</> : "Guardar cambios"}
+                            </button>
+                        </div>
+                    )}
+                </div>
+                {saveMsg && (
+                    <p className={`text-xs mb-3 px-3 py-2 rounded-lg ${saveMsg.includes("Error") ? "text-red-600 bg-red-50" : "text-emerald-700 bg-emerald-50"}`}>{saveMsg}</p>
+                )}
+                {editing ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {([
+                            { key: "rfc", label: "RFC", type: "text", placeholder: "XAXX010101000" },
+                            { key: "contacto", label: "Contacto", type: "text", placeholder: "Nombre director" },
+                            { key: "email", label: "Correo", type: "email", placeholder: "contacto@empresa.mx" },
+                            { key: "telefono", label: "Teléfono", type: "text", placeholder: "662 XXX XXXX" },
+                            { key: "montoSolicitado", label: "Monto solicitado", type: "text", placeholder: "$0,000,000" },
+                            { key: "sector", label: "Sector", type: "text", placeholder: "Construcción" },
+                        ] as Array<{ key: keyof typeof editForm; label: string; type: string; placeholder: string }>).map(({ key, label, type, placeholder }) => (
+                            <div key={key}>
+                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
+                                <input type={type} value={editForm[key]}
+                                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                                    placeholder={placeholder}
+                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
                             </div>
                         ))}
                     </div>
-                </div>
-
-                {(() => {
-                    // alertas may be a JSON string (from DB) or array (mock)
-                    let alertasList: string[] = [];
-                    try {
-                        alertasList = Array.isArray(caso.alertas)
-                            ? caso.alertas
-                            : JSON.parse(caso.alertas || "[]");
-                    } catch { alertasList = []; }
-
-                    return alertasList.length > 0 ? (
-                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-                            <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                                <AlertTriangle className="w-3.5 h-3.5" />Alertas ({alertasList.length})
-                            </p>
-                            <ul className="space-y-2">
-                                {alertasList.map((a: string, i: number) => (
-                                    <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
-                                        <span className="text-amber-400 mt-0.5 flex-shrink-0">•</span>{a}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
-                    ) : (
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-3">
-                            <CheckCircle2 className="w-6 h-6 text-emerald-500 flex-shrink-0" />
-                            <p className="text-sm text-emerald-700 font-medium">Sin alertas ni inconsistencias detectadas.</p>
-                        </div>
-                    )
-                })()}
+                ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        {[
+                            { l: "RFC", v: caso.rfc || "—", warn: !caso.rfc },
+                            { l: "Contacto", v: caso.contacto || "—", warn: false },
+                            { l: "Correo", v: caso.email || "—", warn: false },
+                            { l: "Teléfono", v: caso.telefono || "—", warn: false },
+                            { l: "Sector", v: caso.sector || "—", warn: false },
+                            { l: "Ejecutivo", v: caso.ejecutivo || "—", warn: false },
+                        ].map(({ l, v, warn }) => (
+                            <div key={l}>
+                                <p className="text-xs text-gray-400">{l}</p>
+                                <p className={`text-sm font-semibold ${warn ? "text-red-500 italic" : "text-gray-800"}`}>{v}</p>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </div>
+
+            {/* Alertas */}
+            {(() => {
+                let alertasList: string[] = [];
+                try { alertasList = Array.isArray(caso.alertas) ? caso.alertas : JSON.parse(caso.alertas || "[]"); }
+                catch { alertasList = []; }
+                return alertasList.length > 0 ? (
+                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+                        <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" />Alertas ({alertasList.length})
+                        </p>
+                        <ul className="space-y-2">
+                            {alertasList.map((a: string, i: number) => (
+                                <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
+                                    <span className="text-amber-400 mt-0.5 flex-shrink-0">•</span>{a}
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                ) : (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-3">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-500 flex-shrink-0" />
+                        <p className="text-sm text-emerald-700 font-medium">Sin alertas ni inconsistencias detectadas.</p>
+                    </div>
+                );
+            })()}
         </div>
     );
 }
 
-// ─── Tab: Documentos ──────────────────────────────────────────────────────────
-function TabDocumentos({ caso }: { caso: Case }) {
-    const [showOCR, setShowOCR] = useState(false);
-    const [file, setFile] = useState<File | null>(null);
-    const [status, setStatus] = useState<"idle" | "uploading" | "success" | "error">("idle");
-    const [result, setResult] = useState<any>(null);
-    const [errorMessage, setErrorMessage] = useState("");
+// ─── DocUploadPanel — panel de subida para cada documento del checklist ────────
+// Para el estado de cuenta bancario muestra preview OCR + descarga Excel.
+// Para otros documentos, registra el archivo y marca como entregado.
+interface UploadedDocInfo {
+    nombre: string;
+    estatus: string;
+    url?: string;       // URL pública de Supabase Storage
+    ingresos?: string;
+    egresos?: string;
+    periodo?: string;
+    movimientos?: string;
+    txtContent?: string;
+    txtFilename?: string;
+}
+
+function DocUploadPanel({
+    docId, docNombre, casoId,
+    onSuccess,
+}: {
+    docId: string; docNombre: string; casoId: string;
+    onSuccess: (info: UploadedDocInfo) => void;
+}) {
+    const [uploading, setUploading] = useState(false);
+    const [error, setError] = useState("");
+    const isBankStatement = docId === "estados-cuenta-banco";
+
+    const handleFile = async (f: File) => {
+        if (!f || f.type !== "application/pdf") { setError("Solo archivos PDF."); return; }
+        setUploading(true); setError("");
+        try {
+            const formData = new FormData();
+            formData.append("pdf", f);
+            formData.append("docId", docId);
+            formData.append("nombre", f.name);
+
+            if (isBankStatement) {
+                // 1. OCR analysis
+                const ocrForm = new FormData();
+                ocrForm.append("pdf", f);
+                const ocrRes = await fetch("/api/process-pdf", { method: "POST", body: ocrForm });
+                const ocrData = await ocrRes.json();
+                if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
+
+                // 2. Upload file + register in DB (gets Supabase URL)
+                formData.append("estatus", "Procesado");
+                const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
+                const regData = await regRes.json();
+                if (!regRes.ok) throw new Error(regData.error || "Error al registrar");
+
+                onSuccess({
+                    nombre: f.name, estatus: "Procesado",
+                    url: regData.data?.url,
+                    ingresos: ocrData.data.ingresos_totales,
+                    egresos: ocrData.data.egresos_totales,
+                    periodo: ocrData.data.periodo,
+                    movimientos: ocrData.data.movimientos,
+                    txtContent: ocrData.txtContent,
+                    txtFilename: ocrData.txtFilename,
+                });
+            } else {
+                // Upload file + register in DB
+                formData.append("estatus", "Entregado");
+                const res = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || "Error al registrar");
+                onSuccess({ nombre: f.name, estatus: "Entregado", url: data.data?.url });
+            }
+        } catch (err: any) { setError(err.message); }
+        finally { setUploading(false); }
+    };
+
+    return (
+        <div className="mt-2 ml-8 mr-2">
+            {uploading ? (
+                <div className="flex items-center gap-2 py-3 px-4 bg-blue-50 rounded-xl border border-blue-100 text-xs text-blue-600 font-semibold">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {isBankStatement ? "Procesando con OCR…" : "Registrando documento…"}
+                </div>
+            ) : (
+                <label className="flex items-center gap-3 py-3 px-4 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all">
+                    <UploadCloud className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                    <div>
+                        <p className="text-xs font-semibold text-blue-600">
+                            {isBankStatement ? "Subir estado de cuenta (PDF)" : `Subir ${docNombre.split("/")[0].trim()} (PDF)`}
+                        </p>
+                        {isBankStatement && <p className="text-xs text-gray-400">Se extraerán los datos financieros automáticamente</p>}
+                    </div>
+                    <input type="file" accept="application/pdf" className="hidden"
+                        onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+                </label>
+            )}
+            {error && (
+                <p className="mt-2 text-xs text-red-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{error}</p>
+            )}
+        </div>
+    );
+}
+
+// ─── BankStatementPreview — tabla de datos OCR + Excel download ───────────────
+function BankStatementPreview({ info, casoId }: { info: UploadedDocInfo; casoId: string }) {
     const [año, setAño] = useState(2020);
     const [mes, setMes] = useState("Enero");
     const [excelStatus, setExcelStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
     const [excelResult, setExcelResult] = useState<any>(null);
     const [excelError, setExcelError] = useState("");
 
-    const docsCaso = MOCK_DOCUMENTOS.filter(d => d.casoId === caso.id);
+    const hasData = info.ingresos && info.ingresos !== "No detectado";
 
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        if (f.type !== "application/pdf") { setErrorMessage("Solo archivos PDF."); setStatus("error"); return; }
-        setFile(f); setStatus("idle"); setResult(null); setExcelStatus("idle"); setExcelResult(null); setErrorMessage("");
-    };
-
-    const handleUpload = async () => {
-        if (!file) return;
-        setStatus("uploading");
-        const formData = new FormData();
-        formData.append("pdf", file);
-        try {
-            const res = await fetch("/api/process-pdf", { method: "POST", body: formData });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Error al procesar");
-            setResult(data); setStatus("success");
-        } catch (err: any) { setStatus("error"); setErrorMessage(err.message || "Error"); }
-    };
-
-    const handleGenerateExcel = async () => {
-        const sa = result?.data?.saldo_anterior;
-        const sf = result?.data?.saldo_final;
-        if (!sa || sa === "No detectado" || !sf || sf === "No detectado") {
-            setExcelError("No se detectaron saldos en el PDF."); setExcelStatus("error"); return;
-        }
+    const handleExcel = async () => {
         setExcelStatus("loading"); setExcelError("");
         try {
             const res = await fetch("/api/generate-excel", {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ caseId: caso.id, año, mes, saldoAnterior: sa, saldoFinal: sf }),
+                body: JSON.stringify({ caseId: casoId, año, mes, saldoAnterior: info.ingresos, saldoFinal: info.egresos }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || "Error");
@@ -275,185 +433,252 @@ function TabDocumentos({ caso }: { caso: Case }) {
         } catch (err: any) { setExcelError(err.message); setExcelStatus("error"); }
     };
 
+    const handleDownloadTxt = () => {
+        if (!info.txtContent) return;
+        const blob = new Blob([info.txtContent], { type: "text/plain" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a"); a.href = url;
+        a.download = info.txtFilename || "reporte.txt";
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+    };
+
     return (
-        <div className="space-y-5">
-            {/* Document list */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-gray-700">Documentos del expediente</p>
-                    <button onClick={() => setShowOCR(!showOCR)}
-                        className="flex items-center gap-2 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-all">
-                        <UploadCloud className="w-3.5 h-3.5" />Procesar nuevo PDF
-                    </button>
+        <div className="mt-4 space-y-4">
+            {/* Preview table */}
+            <div className="bg-white border border-emerald-100 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
+                    <BarChart2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-xs font-bold text-emerald-700">Vista previa — datos extraídos</span>
                 </div>
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="bg-gray-50">
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Documento</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Estatus</th>
-                            <th className="text-left px-6 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Fecha</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                        {docsCaso.length === 0 && (
-                            <tr><td colSpan={4} className="px-6 py-8 text-center text-gray-400 text-sm">No hay documentos registrados para este expediente.</td></tr>
-                        )}
-                        {docsCaso.map(doc => (
-                            <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
-                                <td className="px-6 py-3">
-                                    <div className="flex items-center gap-2">
-                                        <FileText className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                                        <span className="text-xs font-medium text-gray-700">{doc.nombre}</span>
-                                    </div>
-                                </td>
-                                <td className="px-6 py-3 text-xs text-gray-500">{doc.tipo}</td>
-                                <td className="px-6 py-3">
-                                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${DOC_ESTATUS_COLORS[doc.estatus]}`}>{doc.estatus}</span>
-                                </td>
-                                <td className="px-6 py-3 text-xs text-gray-400">{doc.fecha ?? "—"}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
+                <div className="p-4">
+                    <div className="grid grid-cols-2 gap-3 mb-3">
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-1">Ingresos (Depósitos)</p>
+                            <p className="text-lg font-extrabold text-emerald-600">
+                                {hasData ? `$${info.ingresos}` : <span className="text-gray-400 font-normal text-sm">No detectado</span>}
+                            </p>
+                        </div>
+                        <div className="bg-red-50 border border-red-100 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-1">Egresos (Retiros)</p>
+                            <p className="text-lg font-extrabold text-red-600">
+                                {info.egresos && info.egresos !== "No detectado" ? `$${info.egresos}` : <span className="text-gray-400 font-normal text-sm">No detectado</span>}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex gap-3 text-xs text-gray-500">
+                        {info.periodo && <span>📅 {info.periodo}</span>}
+                        {info.movimientos && <span>↕ {info.movimientos} movimientos</span>}
+                    </div>
+                </div>
             </div>
 
-            {/* OCR Panel */}
-            {showOCR && (
-                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-4">
-                    <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-semibold text-gray-700">Procesamiento OCR — <span className="text-blue-600">{caso.id}</span></p>
-                        <button onClick={() => setShowOCR(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><X className="w-4 h-4" /></button>
+            {/* Excel export + TXT download side by side */}
+            <div className="flex flex-wrap gap-3 items-end">
+                <div className="flex-1 min-w-[200px]">
+                    <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                        <Table2 className="w-4 h-4 text-green-600" />Exportar a Excel (CUENTAS.xlsx)
+                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                        <select value={año} onChange={e => setAño(Number(e.target.value))}
+                            className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
+                            {AÑOS.map(y => <option key={y}>{y}</option>)}
+                        </select>
+                        <select value={mes} onChange={e => setMes(e.target.value)}
+                            className="px-2.5 py-2 border border-gray-200 rounded-lg text-xs bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
+                            {MESES.map(m => <option key={m}>{m}</option>)}
+                        </select>
+                        <button onClick={handleExcel} disabled={excelStatus === "loading" || !hasData}
+                            className="flex items-center gap-1.5 py-2 px-3 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-40">
+                            {excelStatus === "loading" ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generando…</> : <><Download className="w-3.5 h-3.5" />Generar Excel</>}
+                        </button>
+                        {info.txtContent && (
+                            <button onClick={handleDownloadTxt}
+                                className="flex items-center gap-1.5 py-2 px-3 border border-gray-200 hover:bg-gray-50 text-gray-600 text-xs font-semibold rounded-lg transition-all">
+                                <Download className="w-3.5 h-3.5" />TXT
+                            </button>
+                        )}
                     </div>
-
-                    <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl p-6 bg-gray-50 hover:bg-gray-100 hover:border-blue-300 transition-all relative cursor-pointer">
-                        <input type="file" accept="application/pdf" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                        <UploadCloud className="w-8 h-8 text-blue-400 mb-2" />
-                        <p className="text-sm text-gray-600"><span className="font-semibold text-blue-600">Haz clic para subir</span> o arrastra el PDF</p>
-                    </div>
-
-                    {file && (
-                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-2">
-                            <FileText className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                            <span className="text-sm font-medium text-gray-800 truncate">{file.name}</span>
-                        </div>
-                    )}
-                    {status === "error" && (
-                        <div className="p-3 bg-red-50 border border-red-100 text-red-700 rounded-xl flex items-center gap-2 text-sm">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />{errorMessage}
-                        </div>
-                    )}
-
-                    <button onClick={handleUpload} disabled={!file || status === "uploading"}
-                        className="w-full flex justify-center items-center py-2.5 px-4 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-40 transition-all">
-                        {status === "uploading" ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Procesando…</> : "Procesar estado de cuenta"}
-                    </button>
-
-                    {status === "success" && result && (
-                        <div className="space-y-4">
-                            {/* Datos extraídos — light style */}
-                            <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden">
-                                <div className="px-5 py-3 bg-emerald-50 border-b border-emerald-100 flex items-center gap-2">
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                                    <span className="text-sm font-semibold text-emerald-700">Extracción exitosa — {file?.name}</span>
-                                </div>
-                                <div className="p-5">
-                                    <div className="grid grid-cols-2 gap-3 mb-4">
-                                        {[
-                                            { label: "Saldo Anterior", value: result.data.saldo_anterior, color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100" },
-                                            { label: "Saldo Final", value: result.data.saldo_final, color: "text-purple-600", bg: "bg-purple-50", border: "border-purple-100" },
-                                            { label: "Ingresos Tot.", value: result.data.ingresos_totales, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-                                            { label: "Egresos Tot.", value: result.data.egresos_totales, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
-                                        ].map(({ label, value, color, bg, border }) => (
-                                            <div key={label} className={`${bg} border ${border} rounded-xl p-3`}>
-                                                <p className="text-xs text-gray-500 font-medium mb-1">{label}</p>
-                                                <p className={`text-base font-extrabold ${color}`}>
-                                                    {value !== "No detectado" ? `$${value}` : <span className="text-gray-400 font-normal text-sm">No detectado</span>}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            if (!result.txtContent) return;
-                                            const blob = new Blob([result.txtContent], { type: "text/plain" });
-                                            const url = URL.createObjectURL(blob);
-                                            const a = document.createElement("a"); a.href = url;
-                                            a.download = result.txtFilename || `reporte_${caso.id}.txt`;
-                                            document.body.appendChild(a); a.click();
-                                            document.body.removeChild(a); URL.revokeObjectURL(url);
-                                        }}
-                                        className="w-full flex justify-center items-center gap-2 py-2.5 px-4 rounded-xl border border-gray-200 bg-gray-50 hover:bg-gray-100 text-sm font-semibold text-gray-700 transition-all"
-                                    >
-                                        <Download className="w-4 h-4" />Descargar TXT
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Exportar a Excel */}
-                            <div className="border border-gray-200 rounded-xl p-5 bg-gray-50">
-                                <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-                                    <Table2 className="w-4 h-4 text-green-600" />Exportar a Excel (CUENTAS.xlsx)
-                                </p>
-                                <p className="text-xs text-gray-400 mb-1">
-                                    Selecciona el año y mes para escribir los datos en la fila correcta de la hoja.
-                                </p>
-                                <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-3">
-                                    ⚠ El template actual contiene el año <strong>2020</strong>. Selecciona el año y mes que correspondan a las filas del archivo CUENTAS.xlsx.
-                                </p>
-                                <div className="flex flex-wrap gap-3 items-end">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Año</label>
-                                        <select value={año} onChange={e => setAño(Number(e.target.value))}
-                                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
-                                            {AÑOS.map(y => <option key={y}>{y}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Mes</label>
-                                        <select value={mes} onChange={e => setMes(e.target.value)}
-                                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
-                                            {MESES.map(m => <option key={m}>{m}</option>)}
-                                        </select>
-                                    </div>
-                                    <button onClick={handleGenerateExcel} disabled={excelStatus === "loading"}
-                                        className="flex items-center gap-2 py-2 px-4 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-all">
-                                        {excelStatus === "loading"
-                                            ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generando…</>
-                                            : <><Table2 className="w-3.5 h-3.5" />Generar Excel</>}
-                                    </button>
-                                </div>
-                                {excelStatus === "error" && (
-                                    <div className="mt-3 p-3 bg-red-50 border border-red-100 text-red-700 rounded-lg flex items-center gap-2 text-xs">
-                                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{excelError}
-                                    </div>
-                                )}
-                                {excelStatus === "done" && excelResult && (
-                                    <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 space-y-3">
-                                        <div className="flex items-center gap-2 text-green-700 font-semibold text-sm">
-                                            <CheckCircle2 className="w-4 h-4" />Excel generado correctamente
-                                        </div>
-                                        <div className="text-xs text-green-700 bg-green-100/70 rounded-lg px-3 py-2">
-                                            Ingresos → celda <code className="bg-white px-1 rounded font-mono">{excelResult.cellD}</code>
-                                            &nbsp;·&nbsp;
-                                            Egresos → celda <code className="bg-white px-1 rounded font-mono">{excelResult.cellE}</code>
-                                        </div>
-                                        <button onClick={() => window.location.href = `/api/generate-excel?file=${encodeURIComponent(excelResult.filename)}`}
-                                            className="flex items-center gap-2 py-2 px-4 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-all">
-                                            <Download className="w-4 h-4" />Descargar Excel
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
+                    {excelStatus === "error" && <p className="text-xs text-red-600 mt-1">{excelError}</p>}
                 </div>
-            )}
+                {excelStatus === "done" && excelResult && (
+                    <button onClick={() => window.location.href = `/api/generate-excel?file=${encodeURIComponent(excelResult.filename)}`}
+                        className="flex items-center gap-1.5 py-2 px-3 bg-green-100 hover:bg-green-200 text-green-700 text-xs font-semibold rounded-lg transition-all">
+                        <Download className="w-3.5 h-3.5" />Descargar {excelResult.filename}
+                    </button>
+                )}
+            </div>
         </div>
     );
 }
 
+// ─── Tab: Documentos ──────────────────────────────────────────────────────────
+function TabDocumentos({ caso }: { caso: Case }) {
+    const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+    // Local uploaded docs this session: docId → info
+    const [uploaded, setUploaded] = useState<Record<string, UploadedDocInfo>>({});
 
+    const dbDocs = (caso.documentos ?? []) as Array<{ tipo?: string; nombre?: string; estatus?: string }>;
+
+    const estaEntregado = (docId: string, docNombre: string): boolean => {
+        if (uploaded[docId]) return true;
+        if (docId === "estados-cuenta-banco" && dbDocs.some(d => d.estatus === "Procesado")) return true;
+        const idLower = docId.toLowerCase();
+        const nombreLower = docNombre.toLowerCase();
+        return dbDocs.some(d => {
+            const t = `${d.tipo ?? ""} ${d.nombre ?? ""}`.toLowerCase();
+            return (
+                t.includes(idLower) ||
+                idLower.split("-").some(kw => kw.length > 4 && t.includes(kw)) ||
+                nombreLower.split(" ").slice(0, 3).some(kw => kw.length > 4 && t.includes(kw.toLowerCase()))
+            );
+        });
+    };
+
+    const totalCubiertos = CATEGORIAS_DOCUMENTOS.flatMap(c => c.documentos).filter(d => estaEntregado(d.id, d.nombre)).length;
+    const pct = Math.round((totalCubiertos / TOTAL_DOCUMENTOS_REQUERIDOS) * 100);
+
+    return (
+        <div className="space-y-3">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <p className="text-sm font-bold text-gray-800">Checklist oficial de documentos</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{totalCubiertos} de {TOTAL_DOCUMENTOS_REQUERIDOS} documentos entregados</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-28 bg-gray-100 rounded-full h-2">
+                            <div className={`h-2 rounded-full transition-all ${pct >= 80 ? "bg-emerald-500" : pct >= 50 ? "bg-amber-400" : "bg-red-400"}`}
+                                style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs font-bold text-gray-600">{pct}%</span>
+                    </div>
+                </div>
+
+                {/* Categories + clickable docs */}
+                <div className="divide-y divide-gray-50">
+                    {CATEGORIAS_DOCUMENTOS.map(cat => {
+                        const cubiertos = cat.documentos.filter(d => estaEntregado(d.id, d.nombre)).length;
+                        return (
+                            <div key={cat.id} className="px-6 py-4">
+                                {/* Category header */}
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`w-2 h-2 rounded-full ${cubiertos === cat.documentos.length ? "bg-emerald-500" : cubiertos > 0 ? "bg-amber-400" : "bg-gray-300"}`} />
+                                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">{cat.nombre}</p>
+                                        {cat.descripcion && <p className="text-xs text-gray-400 hidden md:block">— {cat.descripcion}</p>}
+                                    </div>
+                                    <span className="text-xs text-gray-400 font-medium">{cubiertos}/{cat.documentos.length}</span>
+                                </div>
+
+                                {/* Document items */}
+                                <ul className="space-y-1.5">
+                                    {cat.documentos.map(doc => {
+                                        const entregado = estaEntregado(doc.id, doc.nombre);
+                                        const isSelected = selectedDocId === doc.id;
+                                        const uploadedInfo = uploaded[doc.id];
+                                        const isBankStatement = doc.id === "estados-cuenta-banco";
+
+                                        return (
+                                            <li key={doc.id}>
+                                                {/* Clickable doc row */}
+                                                <button
+                                                    onClick={() => setSelectedDocId(isSelected ? null : doc.id)}
+                                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all ${isSelected
+                                                        ? "bg-blue-50 border border-blue-200"
+                                                        : entregado
+                                                            ? "bg-emerald-50/60 hover:bg-emerald-50"
+                                                            : "hover:bg-gray-50 border border-transparent"
+                                                        }`}
+                                                >
+                                                    {entregado
+                                                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                                        : <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${isSelected ? "border-blue-400" : "border-gray-300"}`} />
+                                                    }
+                                                    <span className={`text-sm flex-1 ${entregado ? "text-gray-700" : isSelected ? "text-blue-700 font-medium" : "text-gray-500"}`}>
+                                                        {doc.nombre}
+                                                        {isBankStatement && !entregado && (
+                                                            <span className="ml-2 text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">OCR</span>
+                                                        )}
+                                                    </span>
+                                                    {entregado
+                                                        ? <span className="text-xs text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">✓ Entregado</span>
+                                                        : <span className={`text-xs font-semibold flex-shrink-0 ${isSelected ? "text-blue-500" : "text-gray-400"}`}>
+                                                            {isSelected ? "▲ Cerrar" : "Subir ›"}
+                                                        </span>
+                                                    }
+                                                </button>
+
+                                                {/* Expanded panel */}
+                                                {isSelected && (
+                                                    <div className="mt-1.5">
+                                                        {entregado ? (
+                                                            <div className="ml-8 mr-2 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                                                                <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 mb-2">
+                                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Documento registrado en Supabase
+                                                                </p>
+                                                                {/* Filename */}
+                                                                {(() => {
+                                                                    const dbDoc = dbDocs.find(d => d.tipo === doc.id);
+                                                                    const nombre = uploadedInfo?.nombre ?? dbDoc?.nombre;
+                                                                    const url = uploadedInfo?.url ?? (dbDoc as any)?.url;
+                                                                    return (
+                                                                        <>
+                                                                            {nombre && <p className="text-xs text-gray-500 mb-2">📄 {nombre}</p>}
+                                                                            {url && (
+                                                                                <a href={url} target="_blank" rel="noopener noreferrer"
+                                                                                    className="inline-flex items-center gap-1.5 py-1.5 px-3 bg-white border border-emerald-200 hover:border-emerald-400 text-emerald-700 text-xs font-semibold rounded-lg transition-all hover:bg-emerald-100">
+                                                                                    <Download className="w-3.5 h-3.5" />Descargar PDF
+                                                                                </a>
+                                                                            )}
+                                                                        </>
+                                                                    );
+                                                                })()}
+                                                                {/* Bank statement OCR preview */}
+                                                                {isBankStatement && uploadedInfo && (
+                                                                    <BankStatementPreview info={uploadedInfo} casoId={caso.id} />
+                                                                )}
+                                                                {isBankStatement && !uploadedInfo && dbDocs.some(d => d.estatus === "Procesado") && (
+                                                                    <p className="text-xs text-gray-400 mt-2 italic">Estado de cuenta procesado por OCR previamente. Sube uno nuevo para ver el preview.</p>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <DocUploadPanel
+                                                                docId={doc.id}
+                                                                docNombre={doc.nombre}
+                                                                casoId={caso.id}
+                                                                onSuccess={info => {
+                                                                    setUploaded(prev => ({ ...prev, [doc.id]: info }));
+                                                                    if (isBankStatement) {
+                                                                        // Keep panel open to show preview
+                                                                    } else {
+                                                                        setSelectedDocId(null);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        )}
+
+                                                        {/* Show OCR preview right after upload for bank statement */}
+                                                        {isBankStatement && uploadedInfo && !entregado && (
+                                                            <div className="ml-8 mr-2 mt-2">
+                                                                <BankStatementPreview info={uploadedInfo} casoId={caso.id} />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        </div>
+    );
+}
 // ─── Tab: Análisis ────────────────────────────────────────────────────────────
 function TabAnalisis({ caso }: { caso: Case }) {
     const [showTxt, setShowTxt] = useState(false);
@@ -749,7 +974,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function NuevoExpedienteModal({ onClose, onCreated }: { onClose: () => void; onCreated: (c: any) => void }) {
     const [form, setForm] = useState({
-        cliente: "", contacto: "", email: "", telefono: "",
+        cliente: "", rfc: "", contacto: "", email: "", telefono: "",
         ejecutivo: EJECUTIVOS[0], tipoFinanciamiento: TIPOS_FIN[0],
         montoSolicitado: "", sector: SECTORES[0], observaciones: "",
     });
@@ -781,71 +1006,74 @@ function NuevoExpedienteModal({ onClose, onCreated }: { onClose: () => void; onC
 
 
     return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-100">
-                <div>
-                    <h2 className="text-lg font-bold text-gray-900">Nuevo expediente</h2>
-                    <p className="text-sm text-gray-400">Complete los datos iniciales del caso</p>
-                </div>
-                <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Field label="Razón social *">
-                        <input required value={form.cliente} onChange={e => set("cliente", e.target.value)} placeholder="Empresa S.A. de C.V." className={inputCls} />
-                    </Field>
-                    <Field label="Nombre del contacto">
-                        <input value={form.contacto} onChange={e => set("contacto", e.target.value)} placeholder="Director General" className={inputCls} />
-                    </Field>
-                    <Field label="Correo electrónico">
-                        <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="contacto@empresa.mx" className={inputCls} />
-                    </Field>
-                    <Field label="Teléfono">
-                        <input value={form.telefono} onChange={e => set("telefono", e.target.value)} placeholder="662 XXX XXXX" className={inputCls} />
-                    </Field>
-                    <Field label="Ejecutivo asignado">
-                        <select value={form.ejecutivo} onChange={e => set("ejecutivo", e.target.value)} className={inputCls}>
-                            {EJECUTIVOS.map(j => <option key={j}>{j}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Sector">
-                        <select value={form.sector} onChange={e => set("sector", e.target.value)} className={inputCls}>
-                            {SECTORES.map(s => <option key={s}>{s}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Tipo de financiamiento solicitado">
-                        <select value={form.tipoFinanciamiento} onChange={e => set("tipoFinanciamiento", e.target.value)} className={inputCls}>
-                            {TIPOS_FIN.map(t => <option key={t}>{t}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Monto solicitado">
-                        <input value={form.montoSolicitado} onChange={e => set("montoSolicitado", e.target.value)} placeholder="$0,000,000" className={inputCls} />
-                    </Field>
-                </div>
-                <Field label="Observaciones iniciales">
-                    <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)}
-                        rows={3} placeholder="Contexto relevante del caso…"
-                        className={`${inputCls} resize-none`} />
-                </Field>
-
-                {saveError && (
-                    <div className="p-3 bg-red-50 border border-red-100 text-red-700 text-xs rounded-xl flex items-center gap-2">
-                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{saveError}
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                    <div>
+                        <h2 className="text-lg font-bold text-gray-900">Nuevo expediente</h2>
+                        <p className="text-sm text-gray-400">Complete los datos iniciales del caso</p>
                     </div>
-                )}
-                <div className="flex justify-end gap-3 pt-2">
-                    <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
-                        Cancelar
-                    </button>
-                    <button type="submit" disabled={saving} className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
-                        {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Guardando…</> : "Crear expediente"}
-                    </button>
+                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"><X className="w-5 h-5" /></button>
                 </div>
-            </form>
+
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Field label="Razón social *">
+                            <input required value={form.cliente} onChange={e => set("cliente", e.target.value)} placeholder="Empresa S.A. de C.V." className={inputCls} />
+                        </Field>
+                        <Field label="RFC">
+                            <input value={form.rfc} onChange={e => set("rfc", e.target.value)} placeholder="XAXX010101000" className={inputCls} />
+                        </Field>
+                        <Field label="Nombre del contacto">
+                            <input value={form.contacto} onChange={e => set("contacto", e.target.value)} placeholder="Director General" className={inputCls} />
+                        </Field>
+                        <Field label="Correo electrónico">
+                            <input type="email" value={form.email} onChange={e => set("email", e.target.value)} placeholder="contacto@empresa.mx" className={inputCls} />
+                        </Field>
+                        <Field label="Teléfono">
+                            <input value={form.telefono} onChange={e => set("telefono", e.target.value)} placeholder="662 XXX XXXX" className={inputCls} />
+                        </Field>
+                        <Field label="Ejecutivo asignado">
+                            <select value={form.ejecutivo} onChange={e => set("ejecutivo", e.target.value)} className={inputCls}>
+                                {EJECUTIVOS.map(j => <option key={j}>{j}</option>)}
+                            </select>
+                        </Field>
+                        <Field label="Sector">
+                            <select value={form.sector} onChange={e => set("sector", e.target.value)} className={inputCls}>
+                                {SECTORES.map(s => <option key={s}>{s}</option>)}
+                            </select>
+                        </Field>
+                        <Field label="Tipo de financiamiento solicitado">
+                            <select value={form.tipoFinanciamiento} onChange={e => set("tipoFinanciamiento", e.target.value)} className={inputCls}>
+                                {TIPOS_FIN.map(t => <option key={t}>{t}</option>)}
+                            </select>
+                        </Field>
+                        <Field label="Monto solicitado">
+                            <input value={form.montoSolicitado} onChange={e => set("montoSolicitado", e.target.value)} placeholder="$0,000,000" className={inputCls} />
+                        </Field>
+                    </div>
+                    <Field label="Observaciones iniciales">
+                        <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)}
+                            rows={3} placeholder="Contexto relevante del caso…"
+                            className={`${inputCls} resize-none`} />
+                    </Field>
+
+                    {saveError && (
+                        <div className="p-3 bg-red-50 border border-red-100 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{saveError}
+                        </div>
+                    )}
+                    <div className="flex justify-end gap-3 pt-2">
+                        <button type="button" onClick={onClose} className="px-5 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors">
+                            Cancelar
+                        </button>
+                        <button type="submit" disabled={saving} className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm disabled:opacity-50 flex items-center gap-2">
+                            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Guardando…</> : "Crear expediente"}
+                        </button>
+                    </div>
+                </form>
+            </div>
         </div>
-    </div>
     );
 }
 

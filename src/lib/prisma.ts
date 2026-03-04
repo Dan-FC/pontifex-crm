@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import path from "path";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
 // Prevent multiple Prisma Client instances in development (Next.js hot reload)
 const globalForPrisma = globalThis as unknown as {
@@ -8,10 +8,10 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-    // Prisma 7 requires a driver adapter for local SQLite.
-    // PrismaBetterSqlite3 takes { url } config, not a Database instance.
-    const dbPath = path.resolve(process.cwd(), "pontifex.db");
-    const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+    // Prisma 7 requires a driver adapter for all databases.
+    // PrismaPg uses the 'pg' connection pool with the DATABASE_URL from env.
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    const adapter = new PrismaPg(pool);
     return new PrismaClient({
         adapter,
         log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],

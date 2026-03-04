@@ -1,13 +1,14 @@
 // This is your Prisma schema file.
-// In Prisma 7, the database URL is configured in prisma.config.ts, not here.
+// Database URL is read from the DATABASE_URL env variable.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
+
 
 // ── Expediente (caso central) ─────────────────────────────────────────────────
 model Expediente {
@@ -47,6 +48,8 @@ model Documento {
   movimientos  Int      @default(0)
   rawTxt       String?
   archivoPath  String?
+  url          String?  // URL pública de Supabase Storage
+  size         Int?     // Tamaño del archivo en bytes
 
   expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
 }

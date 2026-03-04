@@ -1,23 +1,28 @@
 ﻿// ── src/lib/completitud.ts ────────────────────────────────────────────────────
 // Módulo de completitud explicable para expedientes Nexus Pontifex.
-// Calcula el % de completitud por categoría y genera un desglose auditable.
+// La categoría "Documentación obligatoria" usa el checklist oficial de
+// documentos-requeridos.ts como fuente de verdad.
+
+import {
+    CATEGORIAS_DOCUMENTOS,
+    TOTAL_DOCUMENTOS_REQUERIDOS,
+} from "./documentos-requeridos";
 
 export interface CategoriaCompletitud {
     nombre: string;
-    peso: number;           // Peso de esta categoría sobre el 100%
-    pct: number;            // % completado dentro de la categoría (0–100)
-    aportePct: number;      // Aporte real al total (peso * pct / 100)
+    peso: number;
+    pct: number;
+    aportePct: number;
     camposCompletos: string[];
     camposFaltantes: string[];
     observacion: string;
 }
 
 export interface ResultadoCompletitud {
-    totalPct: number;       // Suma de aportePct de todas las categorías
+    totalPct: number;
     categorias: CategoriaCompletitud[];
 }
 
-// ── Tipo mínimo que necesitamos del expediente ────────────────────────────────
 export interface ExpedienteParaCalculo {
     cliente: string;
     rfc?: string;
@@ -29,9 +34,11 @@ export interface ExpedienteParaCalculo {
     tipoFinanciamiento: string;
     montoSolicitado?: string;
     observaciones?: string;
-    alertas?: string;         // JSON "[...]"
+    alertas?: string;
     documentos?: Array<{
-        estatus: string;
+        tipo?: string | null;
+        nombre?: string | null;
+        estatus?: string;
         ingresos?: string | null;
         egresos?: string | null;
     }>;
@@ -39,23 +46,23 @@ export interface ExpedienteParaCalculo {
 
 // ── Función principal ─────────────────────────────────────────────────────────
 export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoCompletitud {
+
     const categorias: CategoriaCompletitud[] = [
 
-        // 1. Datos generales (20%)
+        // 1. Datos generales (15%)
         ((): CategoriaCompletitud => {
             const checks = [
                 { campo: "Razón social", ok: !!exp.cliente?.trim() },
                 { campo: "RFC", ok: !!exp.rfc?.trim() && exp.rfc !== "—" },
-                { campo: "Sector", ok: !!exp.sector?.trim() },
+                { campo: "Sector / Industria", ok: !!exp.sector?.trim() },
             ];
             const completos = checks.filter(c => c.ok).map(c => c.campo);
             const faltantes = checks.filter(c => !c.ok).map(c => c.campo);
             const pct = Math.round((completos.length / checks.length) * 100);
-            const peso = 20;
+            const peso = 15;
             return {
                 nombre: "Datos generales",
-                peso,
-                pct,
+                peso, pct,
                 aportePct: Math.round(peso * pct / 100),
                 camposCompletos: completos,
                 camposFaltantes: faltantes,
@@ -79,8 +86,7 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
             const peso = 10;
             return {
                 nombre: "Contacto principal",
-                peso,
-                pct,
+                peso, pct,
                 aportePct: Math.round(peso * pct / 100),
                 camposCompletos: completos,
                 camposFaltantes: faltantes,
@@ -90,7 +96,7 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
             };
         })(),
 
-        // 3. Solicitud financiera (20%)
+        // 3. Solicitud financiera (15%)
         ((): CategoriaCompletitud => {
             const checks = [
                 { campo: "Tipo de financiamiento", ok: !!exp.tipoFinanciamiento?.trim() },
@@ -99,11 +105,10 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
             const completos = checks.filter(c => c.ok).map(c => c.campo);
             const faltantes = checks.filter(c => !c.ok).map(c => c.campo);
             const pct = Math.round((completos.length / checks.length) * 100);
-            const peso = 20;
+            const peso = 15;
             return {
                 nombre: "Solicitud financiera",
-                peso,
-                pct,
+                peso, pct,
                 aportePct: Math.round(peso * pct / 100),
                 camposCompletos: completos,
                 camposFaltantes: faltantes,
@@ -113,60 +118,84 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
             };
         })(),
 
-        // 4. Documentación obligatoria (25%)
+        // 4. Documentación obligatoria (40%)
+        // Usa el checklist oficial de 22 documentos en 5 categorías.
         ((): CategoriaCompletitud => {
             const docs = exp.documentos ?? [];
-            const tieneDocProcesado = docs.some(d => d.estatus === "Procesado");
-            const totalDocs = docs.length;
-            const procesados = docs.filter(d => d.estatus === "Procesado").length;
-            const pct = totalDocs === 0 ? 0 : Math.round((procesados / Math.max(totalDocs, 3)) * 100);
-            const peso = 25;
-            const completos = tieneDocProcesado ? [`${procesados} documento(s) procesado(s)`] : [];
-            const faltantes = totalDocs === 0
-                ? ["Al menos un estado de cuenta procesado por OCR"]
-                : procesados === 0
-                    ? ["Ningún documento ha sido procesado exitosamente"]
-                    : [];
+            // Construir un set de tipos/nombres de docs subidos
+            const subidos = docs
+                .map(d => `${d.tipo ?? ""} ${d.nombre ?? ""}`.toLowerCase().trim())
+                .filter(Boolean);
+
+            // Contar cuántos ítems del checklist oficial tienen cobertura
+            // Un doc se considera cubierto si su id o primeras palabras del nombre
+            // aparecen en alguno de los documentos subidos
+            const todosLosDocOficiales = CATEGORIAS_DOCUMENTOS.flatMap(c => c.documentos);
+            const cubiertos: string[] = [];
+            const faltoltes: string[] = [];
+
+            for (const docReq of todosLosDocOficiales) {
+                const idLower = docReq.id.toLowerCase();
+                const nombreLower = docReq.nombre.toLowerCase();
+                const cobertura = subidos.some(s =>
+                    s.includes(idLower) ||
+                    idLower.split("-").some(kw => s.includes(kw)) ||
+                    nombreLower.split(" ").slice(0, 3).some(kw => kw.length > 4 && s.includes(kw.toLowerCase()))
+                );
+                if (cobertura) cubiertos.push(docReq.nombre);
+                else faltoltes.push(docReq.nombre);
+            }
+
+            // Puntaje parcial por categoría (para dar crédito parcial si faltan algunos)
+            const docsProcesados = docs.filter(d => d.estatus === "Procesado").length;
+            // Si hay documentos procesados por OCR (estado de cuenta bancario), acreditamos
+            // la subcategoría "estados de cuenta bancarios"
+            if (docsProcesados > 0 && faltoltes.includes("Estados de cuenta bancarios (últimos 12 meses)")) {
+                const idx = faltoltes.indexOf("Estados de cuenta bancarios (últimos 12 meses)");
+                faltoltes.splice(idx, 1);
+                cubiertos.push("Estados de cuenta bancarios (últimos 12 meses) [OCR]");
+            }
+
+            const totalReq = TOTAL_DOCUMENTOS_REQUERIDOS;
+            const pct = Math.min(Math.round((cubiertos.length / totalReq) * 100), 100);
+            const peso = 40;
+
             return {
                 nombre: "Documentación obligatoria",
-                peso,
-                pct: Math.min(pct, 100),
-                aportePct: Math.round(peso * Math.min(pct, 100) / 100),
-                camposCompletos: completos,
-                camposFaltantes: faltantes,
-                observacion: totalDocs === 0
-                    ? "No se han cargado documentos. Suba estados de cuenta bancarios."
-                    : tieneDocProcesado
-                        ? `${procesados} de ${totalDocs} documentos procesados correctamente.`
-                        : "Documentos pendientes de procesamiento OCR.",
+                peso, pct,
+                aportePct: Math.round(peso * pct / 100),
+                camposCompletos: cubiertos,
+                camposFaltantes: faltoltes,
+                observacion: cubiertos.length === 0
+                    ? `Ningún documento del checklist oficial (${totalReq} requeridos) ha sido registrado.`
+                    : cubiertos.length === totalReq
+                        ? "Checklist de documentos completado al 100%."
+                        : `${cubiertos.length} de ${totalReq} documentos registrados. Faltan ${faltoltes.length}.`,
             };
         })(),
 
-        // 5. Análisis financiero (15%)
+        // 5. Análisis financiero OCR (10%)
         ((): CategoriaCompletitud => {
             const docs = exp.documentos ?? [];
-            const conAnalisis = docs.filter(d => d.ingresos && d.ingresos !== "No detectado");
-            const tieneIngresos = conAnalisis.length > 0;
-            const conEgresos = docs.filter(d => d.egresos && d.egresos !== "No detectado");
-            const tieneEgresos = conEgresos.length > 0;
+            const tieneIngresos = docs.some(d => d.ingresos && d.ingresos !== "No detectado");
+            const tieneEgresos = docs.some(d => d.egresos && d.egresos !== "No detectado");
             const checks = [
-                { campo: "Ingresos (depósitos) detectados", ok: tieneIngresos },
-                { campo: "Egresos (retiros) detectados", ok: tieneEgresos },
+                { campo: "Ingresos (depósitos) detectados por OCR", ok: tieneIngresos },
+                { campo: "Egresos (retiros) detectados por OCR", ok: tieneEgresos },
             ];
             const completos = checks.filter(c => c.ok).map(c => c.campo);
             const faltantes = checks.filter(c => !c.ok).map(c => c.campo);
             const pct = Math.round((completos.length / checks.length) * 100);
-            const peso = 15;
+            const peso = 10;
             return {
-                nombre: "Análisis financiero",
-                peso,
-                pct,
+                nombre: "Análisis financiero OCR",
+                peso, pct,
                 aportePct: Math.round(peso * pct / 100),
                 camposCompletos: completos,
                 camposFaltantes: faltantes,
                 observacion: pct === 100
                     ? "El OCR detectó ingresos y egresos correctamente."
-                    : "El OCR no detectó todos los datos financieros. Verifique el PDF.",
+                    : "Sube un estado de cuenta bancario para que el OCR detecte los datos financieros.",
             };
         })(),
 
@@ -186,8 +215,7 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
             const peso = 10;
             return {
                 nombre: "Validación fiscal/legal",
-                peso,
-                pct,
+                peso, pct,
                 aportePct: Math.round(peso * pct / 100),
                 camposCompletos: completos,
                 camposFaltantes: faltantes,
@@ -196,11 +224,8 @@ export function calcularCompletitud(exp: ExpedienteParaCalculo): ResultadoComple
                     : `Pendiente: ${faltantes.join(", ")}.`,
             };
         })(),
-
     ];
 
     const totalPct = categorias.reduce((acc, c) => acc + c.aportePct, 0);
-
     return { totalPct: Math.min(totalPct, 100), categorias };
 }
-

@@ -1,0 +1,18 @@
+=======================================
+REPORTE DE ESTADO DE CUENTA — PONTIFEX
+=======================================
+Archivo:        Estado de Cuenta.pdf
+Fecha proceso:  2026-03-03
+ID caso:        596CF39E
+
+--- RESUMEN FINANCIERO ---
+Ingresos (Depósitos):  $17,851.24
+Egresos  (Retiros):    $17,495.18
+Movimientos detectados: 0 total (0 ingresos / 0 egresos)
+
+--- MOVIMIENTOS INDIVIDUALES ---
+(No se detectaron movimientos con el formato esperado)
+
+=======================================
+Generado por Nexus Pontifex
+=======================================
