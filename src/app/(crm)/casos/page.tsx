@@ -520,22 +520,12 @@ function TabDocumentos({ caso }: { caso: Case }) {
 
     const dbDocs = (caso.documentos ?? []) as Array<{ tipo?: string; nombre?: string; estatus?: string }>;
 
-    const estaEntregado = (docId: string, docNombre: string): boolean => {
+    const estaEntregado = (docId: string): boolean => {
         if (uploaded[docId]) return true;
-        if (docId === "estados-cuenta-banco" && dbDocs.some(d => d.estatus === "Procesado")) return true;
-        const idLower = docId.toLowerCase();
-        const nombreLower = docNombre.toLowerCase();
-        return dbDocs.some(d => {
-            const t = `${d.tipo ?? ""} ${d.nombre ?? ""}`.toLowerCase();
-            return (
-                t.includes(idLower) ||
-                idLower.split("-").some(kw => kw.length > 4 && t.includes(kw)) ||
-                nombreLower.split(" ").slice(0, 3).some(kw => kw.length > 4 && t.includes(kw.toLowerCase()))
-            );
-        });
+        return dbDocs.some(d => d.tipo === docId);
     };
 
-    const totalCubiertos = CATEGORIAS_DOCUMENTOS.flatMap(c => c.documentos).filter(d => estaEntregado(d.id, d.nombre)).length;
+    const totalCubiertos = CATEGORIAS_DOCUMENTOS.flatMap(c => c.documentos).filter(d => estaEntregado(d.id)).length;
     const pct = Math.round((totalCubiertos / TOTAL_DOCUMENTOS_REQUERIDOS) * 100);
 
     return (
@@ -559,7 +549,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
                 {/* Categories + clickable docs */}
                 <div className="divide-y divide-gray-50">
                     {CATEGORIAS_DOCUMENTOS.map(cat => {
-                        const cubiertos = cat.documentos.filter(d => estaEntregado(d.id, d.nombre)).length;
+                        const cubiertos = cat.documentos.filter(d => estaEntregado(d.id)).length;
                         return (
                             <div key={cat.id} className="px-6 py-4">
                                 {/* Category header */}
@@ -575,7 +565,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                 {/* Document items */}
                                 <ul className="space-y-1.5">
                                     {cat.documentos.map(doc => {
-                                        const entregado = estaEntregado(doc.id, doc.nombre);
+                                        const entregado = estaEntregado(doc.id);
                                         const isSelected = selectedDocId === doc.id;
                                         const uploadedInfo = uploaded[doc.id];
                                         const isBankStatement = doc.id === "estados-cuenta-banco";
