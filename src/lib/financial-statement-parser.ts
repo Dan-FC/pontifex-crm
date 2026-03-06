@@ -1,37 +1,31 @@
 // ── src/lib/financial-statement-parser.ts ────────────────────────────────────
 // OCR parser para Balance General y Estado de Resultados.
-// Extrae los campos clave y calcula los KPIs de Formulas KPIs.pdf.
+// Extrae los campos clave para TODOS los períodos del documento.
 
 const pdfParse = require("pdf-parse");
 
 // ─── Interfaces ───────────────────────────────────────────────────────────────
 
 export interface BalanceGeneral {
-    // Activo Circulante
     activoCirculante: number | null;
     inventarios: number | null;
     clientes: number | null;
     deudoresDiversos: number | null;
-    // Activo Fijo
     activoFijo: number | null;
     terrenosEdificios: number | null;
     maquinariaEquipo: number | null;
     equipoTransporte: number | null;
-    // Otros
     otrosActivos: number | null;
     intangibles: number | null;
     activoTotal: number | null;
-    // Pasivo Circulante
     pasivoCirculante: number | null;
     proveedores: number | null;
     acreedoresDiversos: number | null;
     docsPagarCP: number | null;
-    // Pasivo Largo Plazo
     pasivoLargoPlazo: number | null;
     docsPagarLP: number | null;
     otrosPasivos: number | null;
     pasivoTotal: number | null;
-    // Capital
     capitalSocial: number | null;
     utilidadesAnteriores: number | null;
     capitalContable: number | null;
@@ -53,188 +47,416 @@ export interface EstadoResultados {
 }
 
 export interface KPIs {
-    // Liquidez
-    liquidezCirculante: number | null;   // Activo circ / Pasivo circ
-    pruebaAcido: number | null;          // (Activo circ - Inventarios) / Pasivo circ
-    // Actividad
-    rotacionCxC: number | null;          // Ventas / Clientes
-    rotacionCxP: number | null;          // (Proveedores / Costo venta) * 365
-    rotacionInventarios: number | null;  // (Inventarios / Costo venta) * 365
-    // Apalancamiento
-    deudaTotal: number | null;           // Pasivo total / Activo total
-    deudaCapital: number | null;         // Pasivo total / Capital contable
-    deudaLP: number | null;              // Pasivo LP / (Activo total - Pasivo total)
-    // Rentabilidad
-    margenUtilidad: number | null;       // Utilidad neta / Ventas
-    roa: number | null;                  // Utilidad neta / Activo total
-    roe: number | null;                  // Utilidad neta / Capital contable
+    liquidezCirculante: number | null;
+    pruebaAcido: number | null;
+    rotacionCxC: number | null;
+    rotacionCxP: number | null;
+    rotacionInventarios: number | null;
+    deudaTotal: number | null;
+    deudaCapital: number | null;
+    deudaLP: number | null;
+    margenUtilidad: number | null;
+    roa: number | null;
+    roe: number | null;
 }
 
-export interface ParsedFinancialStatement {
+export interface FinancialPeriod {
+    periodo: string;
     balanceGeneral: BalanceGeneral;
     estadoResultados: EstadoResultados;
     kpis: KPIs;
-    periodos: string[];
-    rawText: string;
 }
 
-// ─── Patrones de etiquetas (cubre todas las variantes del documento Conceptos) ─
+export interface ParsedFinancialStatement {
+    periodos: string[];
+    periodData: FinancialPeriod[];
+    rawText: string;
+    // Backward-compat: most recent period
+    balanceGeneral: BalanceGeneral;
+    estadoResultados: EstadoResultados;
+    kpis: KPIs;
+}
+
+// ─── Patrones de etiquetas ────────────────────────────────────────────────────
+// Basados en "Conceptos Edo Resultados _ BG.pdf" — cubre todas las variantes
+// que distintas empresas/contadores pueden usar en sus estados financieros.
 
 const PATTERNS: Record<string, RegExp> = {
-    // ── Activo ────────────────────────────────────────────────────────────────
-    activoCirculante: /activo\s*(circulante|corriente|a\s*corto\s*plazo)|activos?\s*(circulantes?|corrientes?)/i,
-    inventarios: /inventarios?|existencias|mercanc[íi]as?\s*(en\s*almac[eé]n)?|almac[eé]n|productos?\s*terminados?|inv\./i,
-    clientes: /^clientes?$|cuentas?\s*por\s*cobrar(\s*clientes?)?|cartera\s*de\s*clientes?/i,
-    deudoresDiversos: /deudores?\s*diversos?|deudores?\s*varios?|otros?\s*deudores?|cuentas?\s*por\s*cobrar\s*diversas?/i,
-    activoFijo: /activo\s*(fijo|no\s*corriente)|activos?\s*(fijos?|no\s*corrientes?)|propiedad[,\s]*planta\s*y\s*equipo|ppe\b/i,
-    terrenosEdificios: /terrenos?\s*y\s*edificios?|terrenos?\s*[,y]\s*edificios?|inmuebles?|bienes?\s*inmuebles?/i,
-    maquinariaEquipo: /maquinaria\s*y\s*equipo|maquinaria\b(?!\s*de\s*transporte)|equipo\s*(industrial|de\s*producci[oó]n|operativo)/i,
-    equipoTransporte: /equipo\s*de\s*transporte|veh[íi]culos?(\s*de\s*empresa)?|flotilla\b/i,
-    otrosActivos: /otros?\s*activos?(?!\s*no\s*corrientes?\s*fijos?)|activos?\s*(varios?|diversos?)/i,
-    intangibles: /intangibles?|activos?\s*intangibles?|registro\s*de\s*marca|patentes?|licencias?|software\b|goodwill/i,
-    activoTotal: /activo\s*total|total\s*(de\s*)?activo|activos?\s*totales?|total\s*general\s*(de\s*)?activos?|suma\s*del\s*activo/i,
+    // ── Activo ─────────────────────────────────────────────────────────────────
+    activoCirculante:
+        /\bactivo\s*(?:circulante|corriente|a\s*corto\s*plazo|disponible|realizable)\b|activos?\s*(?:circulantes?|corrientes?|realizables?)/i,
 
-    // ── Pasivo ────────────────────────────────────────────────────────────────
-    pasivoCirculante: /pasivo\s*(circulante|corriente|a\s*corto\s*plazo)|pasivos?\s*(corrientes?|circulantes?)/i,
-    proveedores: /^proveedores?$|cuentas?\s*por\s*pagar\s*proveedores?|acreedores?\s*comerciales?/i,
-    acreedoresDiversos: /acreedores?\s*div(ersos?\.?)?|otros?\s*acreedores?|acreedores?\s*varios?|cuentas?\s*por\s*pagar\s*diversas?/i,
-    docsPagarCP: /docs?\.\s*x?\s*pagar\s*cp|documentos?\s*por\s*pagar\s*(a\s*)?corto\s*plazo|pagar[eé]s?\s*cp|cr[eé]ditos?\s*bancarios?\s*cp|financiamientos?\s*cp/i,
-    pasivoLargoPlazo: /pasivo\s*(largo\s*plazo|a\s*largo\s*plazo|no\s*corriente)|pasivos?\s*(no\s*corrientes?|largo\s*plazo)|deuda\s*a\s*largo\s*plazo/i,
-    docsPagarLP: /docs?\.\s*x?\s*pagar\s*lp|documentos?\s*por\s*pagar\s*(a\s*)?largo\s*plazo|cr[eé]ditos?\s*bancarios?\s*lp|hip[oó]teca\b|financiamiento\s*(a\s*)?largo\s*plazo/i,
-    otrosPasivos: /otros?\s*pasivos?|pasivos?\s*(diversos?|acumulados?)/i,
-    pasivoTotal: /pasivo\s*total|total\s*(de\s*)?pasivo|pasivos?\s*totales?|total\s*general\s*(de\s*)?pasivos?|suma\s*del\s*pasivo/i,
+    inventarios:
+        /\binventarios?\b|\bexistencias\b|mercanc[íi]as?(?:\s*en\s*almac[eé]n)?|\balmac[eé]n\b|productos?\s*terminados?|inventario\s*(?:de\s*mercanc[íi]a|final|de\s*productos?)/i,
 
-    // ── Capital ───────────────────────────────────────────────────────────────
-    capitalSocial: /capital\s*social|capital\s*(suscrito|pagado|aportado|fijo|variable)|aportaciones?\s*de\s*socios?/i,
-    utilidadesAnteriores: /ut(ilidades?)?\s*(de\s*)?ejercicios?\s*anteriores?|utilidades?\s*(acumuladas?|retenidas?)|resultados?\s*acumulados?|ganancias?\s*retenidas?/i,
-    capitalContable: /capital\s*contable\b|patrimonio(\s*neto|\s*contable)?|capital\s*total|total\s*capital\s*contable/i,
+    clientes:
+        /\bclientes?\b(?!\s*potenciales?|\s*morosos?)|cuentas?\s*por\s*cobrar(?!\s*diversas?)(?:\s*clientes?)?|cartera\s*de\s*clientes?|clientes?\s*(?:nacionales?|extranjeros?|comerciales?)|documentos?\s*por\s*cobrar(?!\s*(?:largo|corto))/i,
 
-    // ── Estado de Resultados ──────────────────────────────────────────────────
-    ventas: /^ventas?(\s*netas?)?$|ingresos?\s*(netos?|totales?|por\s*ventas?)?(?!\s*financieros)/i,
-    costoVenta: /costo\s*(de\s*)?(venta|ventas?|producci[oó]n)|costo\s*directo/i,
-    utilidadBruta: /ut(ilidad)?\.?\s*bruta|utilidad\s*bruta|resultado\s*bruto/i,
-    gastosOperacion: /gastos?\s*(de\s*)?(op(eraci[oó]n|erativos?)?\.?|administraci[oó]n|ventas?\s*y\s*administraci[oó]n)|gastos?\s*operativos?/i,
-    utilidadOperacion: /ut(ilidad)?\.?\s*(de\s*)?op(eraci[oó]n)?\.?|utilidad\s*(de\s*)?operaci[oó]n|resultado\s*de\s*operaci[oó]n|ebit\b/i,
-    gastosFinancieros: /gastos?\s*fin(ancieros?)?\.?|intereses?\s*(pagados?|a\s*cargo)|costo\s*financiero/i,
-    otrosProductos: /otros?\s*productos?|ingresos?\s*(no\s*operativos?|diversos?|financieros?)/i,
-    otrosGastos: /otros?\s*gastos?|gastos?\s*(no\s*operativos?|diversos?)/i,
-    utilidadAntesImpuestos: /ut(ilidad)?\.?\s*antes?\s*(de\s*)?imp(uestos?)?\.?|utilidad\s*antes?\s*de\s*impuestos?|resultado\s*antes?\s*de\s*impuestos?/i,
-    impuestos: /impuestos?\s*(a\s*la\s*utilidad|sobre\s*la\s*renta|del\s*ejercicio)?|isr\b/i,
-    depreciacion: /depreciaci[oó]n(\s*y\s*amortizaci[oó]n)?|amortizaci[oó]n\b/i,
-    utilidadNeta: /ut(ilidad)?\s*neta|utilidad\s*neta|resultado\s*neto|beneficio\s*neto/i,
+    deudoresDiversos:
+        /deudores?\s*diversos?|deudores?\s*varios?|otros?\s*deudores?|cuentas?\s*por\s*cobrar\s*diversas?|anticipos?\s*a\s*empleados?|pr[eé]stamos?\s*a\s*empleados?/i,
+
+    activoFijo:
+        /\bactivo\s*(?:fijo|no\s*corriente|de\s*largo\s*plazo)\b|activos?\s*(?:fijos?|no\s*corrientes?|de\s*largo\s*plazo)|propiedad[\s,]*planta\s*y\s*equipo|\bppe\b/i,
+
+    // ── Cuidado: terrenos solos sin "y edificios" para evitar confusión con "Terrenos y Edificios"
+    terrenosEdificios:
+        /terrenos?\s*y\s*edificios?|terrenos?\s*[,y]\s*edificios?|\binmuebles?\b|bienes?\s*inmuebles?|\bpropiedades?\b/i,
+
+    maquinariaEquipo:
+        /maquinaria\s*y\s*equipo|\bmaquinaria\b(?!\s*de\s*transporte)|equipo\s*(?:industrial|de\s*producci[oó]n|operativo)/i,
+
+    equipoTransporte:
+        /equipo\s*de\s*transporte|veh[íi]culos?(?:\s*de\s*empresa)?|\bflotilla\b/i,
+
+    otrosActivos:
+        /\botros?\s*activos?\b(?!\s*no\s*corrientes?|\s*fijos?|\s*de\s*largo)|activos?\s*(?:varios?|diversos?)/i,
+
+    intangibles:
+        /\bintangibles?\b|activos?\s*intangibles?|registro\s*de\s*marca|\bpatentes?\b|\blicencias?\b|\bgoodwill\b|\bmarcas?\b|\bsoftware\b/i,
+
+    activoTotal:
+        /\bactivo\s*total\b|total\s*(?:de\s*)?activo\b|activos?\s*totales?|suma\s*del\s*activo|activo\s*(?:consolidado\s*total|total\s*neto|total\s*consolidado|total\s*al\s*cierre)|total\s*general\s*(?:de\s*)?activos?|total\s*activo\s*consolidado/i,
+
+    // ── Pasivo ─────────────────────────────────────────────────────────────────
+    pasivoCirculante:
+        /\bpasivo\s*(?:circulante|corriente|a\s*corto\s*plazo)\b|pasivos?\s*(?:corrientes?|circulantes?)/i,
+
+    proveedores:
+        /\bproveedores?\b|cuentas?\s*por\s*pagar(?!\s*diversas?)(?:\s*proveedores?)?|proveedores?\s*nacionales?|acreedores?\s*comerciales?/i,
+
+    acreedoresDiversos:
+        /acreedores?\s*div(?:ersos?)?|otros?\s*acreedores?|acreedores?\s*varios?|cuentas?\s*por\s*pagar\s*diversas?/i,
+
+    docsPagarCP:
+        /docs?\.?\s*(?:x|por)\s*pagar\s*c\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*corto\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?corto\s*plazo|documentos?\s*comerciales?\s*por\s*pagar|pagar[eé]s?\b|cr[eé]ditos?\s*bancarios?\s*c\.?p\.?\b/i,
+
+    pasivoLargoPlazo:
+        /\bpasivo\s*(?:largo\s*plazo|a\s*largo\s*plazo|no\s*corriente)\b|pasivos?\s*(?:no\s*corrientes?|largo\s*plazo)|deuda\s*a\s*largo\s*plazo|obligaciones?\s*a\s*largo\s*plazo/i,
+
+    docsPagarLP:
+        /docs?\.?\s*(?:x|por)\s*pagar\s*l\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*largo\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?largo\s*plazo|cr[eé]ditos?\s*bancarios?\s*l\.?p\.?\b|pr[eé]stamos?\s*bancarios?\s*l\.?p\.?\b|financiamiento\s*a\s*largo\s*plazo|\bhip[oó]teca\b/i,
+
+    otrosPasivos:
+        /\botros?\s*pasivos?\b(?!\s*corrientes?|\s*no\s*corrientes?)|pasivos?\s*(?:diversos?|acumulados?)/i,
+
+    pasivoTotal:
+        /\bpasivo\s*total\b|total\s*(?:de\s*)?pasivo\b|pasivos?\s*totales?|suma\s*del\s*pasivo|total\s*general\s*(?:del?\s*)?pasivos?|total\s*pasivo\s*consolidado/i,
+
+    // ── Capital ────────────────────────────────────────────────────────────────
+    capitalSocial:
+        /capital\s*(?:social|suscrito(?:\s*y\s*pagado)?|pagado|aportado|fijo|variable|de\s*los?\s*socios?)|aportaciones?\s*de\s*socios?/i,
+
+    utilidadesAnteriores:
+        /ut(?:ilidades?)?\s*(?:de\s*)?ejercicios?\s*(?:anteriores?|anterioes?)|utilidades?\s*(?:acumuladas?|retenidas?|no\s*distribuidas?)|resultados?\s*(?:acumulados?(?:\s*de\s*a[ñn]os?\s*anteriores?)?|de\s*ejercicios?\s*anteriores?)|ganancias?\s*retenidas?|beneficios?\s*acumulados?/i,
+
+    // Nota: no incluye "capital social" para no chocar con el campo capitalSocial
+    capitalContable:
+        /\bcapital\s*contable\b(?!\s*[+y])|total\s*capital(?:\s*contable)?\b|capital\s*total\b|total\s*patrimonio\b|\bpatrimonio(?:\s*neto|\s*contable|\s*de\s*(?:los?\s*)?accionistas?)?\b|capital\s*y\s*reservas\b/i,
+
+    // ── Estado de Resultados ───────────────────────────────────────────────────
+    ventas:
+        /\bventas?\s*netas?\b|\bventas?\s*totales?\b|\bventas?\b(?!\s*(?:de|del)\s*(?:mercanc|producci|costo|administr))|\bingresos?\s*(?:netos?|totales?|por\s*ventas?|operativos?|de\s*operaci[oó]n|de\s*operaciones?)?(?!\s*(?:financieros?|no\s*operativos?|diversos?|extraordinarios?))(?!\s*otros?)|\bfacturaci[oó]n\b/i,
+
+    costoVenta:
+        /costos?\s*(?:de\s*)?(?:venta|ventas?|producci[oó]n|mercanc[íi]a\s*vendida|bienes?\s*vendidos?|productos?\s*vendidos?)|costo\s*directo(?:\s*de\s*ventas?)?/i,
+
+    utilidadBruta:
+        /ut\.?\s*(?:ilidad)?\s*bruta\b|resultado\s*bruto\b|ganancia\s*bruta\b|margen\s*bruto\b|beneficio\s*bruto\b/i,
+
+    gastosOperacion:
+        /gastos?\s*(?:de\s*)?(?:op(?:eraci[oó]n(?:al|es)?|erativos?)?|administraci[oó]n(?:\s*y\s*ventas?)?|ventas?\s*y\s*administraci[oó]n|ventas?\b|generales?\b)|gastos?\s*operativos?\b|gastos?\s*operacionales?\b/i,
+
+    utilidadOperacion:
+        /ut\.?\s*(?:ilidad)?\s*(?:de\s*)?op(?:eraci[oó]n(?:al|es)?)?\b|utilidad\s*operativa\b|resultado\s*operativo\b|ganancia\s*operativa\b|beneficio\s*operativo\b|\bebit\b/i,
+
+    gastosFinancieros:
+        /gastos?\s*fin\.?(?:ancieros?)?\b|intereses?\s*(?:pagados?|a\s*cargo)|gastos?\s*por\s*intereses?\b|cargos?\s*financieros?\b|costo\s*financiero\b/i,
+
+    otrosProductos:
+        /otros?\s*productos?\b|otros?\s*ingresos?\b(?!\s*de\s*operaci)|ingresos?\s*(?:no\s*operativos?|diversos?|extraordinarios?)/i,
+
+    otrosGastos:
+        /otros?\s*gastos?\b(?!\s*de\s*operaci)|gastos?\s*(?:no\s*operativos?|diversos?|extraordinarios?)|otros?\s*egresos?\b/i,
+
+    utilidadAntesImpuestos:
+        /ut\.?\s*(?:ilidad)?\s*antes?\s*(?:de\s*)?(?:imp(?:uestos?)?|isr)\b|resultado\s*antes?\s*de\s*impuestos?(?:\s*(?:sobre\s*la\s*renta|a\s*la\s*utilidad))?\b|ganancia\s*antes?\s*de\s*impuestos?\b/i,
+
+    impuestos:
+        /\bimpuestos?\s*(?:a\s*la\s*utilidad|sobre\s*la\s*renta|del\s*ejercicio)?\b|\bisr\b|\bcarga\s*fiscal\b/i,
+
+    depreciacion:
+        /depreciaci[oó]\s*n(?:\s*y\s*amortizaci[oó]\s*n)?(?:\s*(?:del?\s*ejercicio|del?\s*periodo?|de\s*activos?|acumulada))?|\bamortizaci[oó]\s*n\b/i,
+
+    utilidadNeta:
+        /ut\.?\s*(?:ilidad)?\s*neta\b|resultado\s*(?:neto\b|del\s*ejercicio\b)|ganancia\s*neta\b|beneficio\s*neto\b|utilidad\s*del\s*periodo?\b/i,
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Pre-procesador ───────────────────────────────────────────────────────────
 
-/** Extrae el primer número positivo o negativo de una cadena */
-function extractNumber(str: string): number | null {
-    // Busca patrones: (1,234,567.89) para negativo o 1,234,567.89
-    const neg = str.match(/\(\s*([\d,]+\.?\d*)\s*\)/);
-    if (neg) return -parseFloat(neg[1].replace(/,/g, ""));
-
-    const pos = str.match(/[\d,]+\.?\d*/);
-    if (pos) {
-        const val = parseFloat(pos[0].replace(/,/g, ""));
-        return isNaN(val) ? null : val;
-    }
-    return null;
+/**
+ * Normaliza líneas del PDF para facilitar el matching de patrones:
+ *   1. Separa amounts de porcentajes: "800,00016.00%" → "800,000 16.00% "
+ *      También maneja porcentajes de 3 dígitos: "5,000,000100%" → "5,000,000 100% "
+ *   2. Añade espacio entre letra y dígito: "Inventarios800,000" → "Inventarios 800,000"
+ *      Esto permite que \b funcione correctamente al final de la etiqueta.
+ */
+function preprocessText(text: string): string {
+    // 1. Separar monto de porcentaje (1–3 dígitos enteros, decimal opcional)
+    let result = text.replace(/(\d{1,3}(?:,\d{3})*)(\d{1,3}(?:\.\d{1,2})?%)/g, "$1 $2 ");
+    // 2. Añadir espacio entre letra final de etiqueta y primer dígito del valor
+    result = result.replace(/([a-zA-ZáéíóúÁÉÍÓÚüÜñÑ])(\d)/g, "$1 $2");
+    return result;
 }
 
-/** Busca el campo en las líneas del texto. Toma el último número de la línea (columna más reciente). */
-function findField(lines: string[], pattern: RegExp): number | null {
+// ─── Extractor de amounts ─────────────────────────────────────────────────────
+
+// Detiene la extracción al encontrar la siguiente etiqueta (≥6 letras seguidas).
+const LABEL_STOP_RE = /(?<![,\d])[A-Za-záéíóúÁÉÍÓÚüÜñÑ]{6,}/;
+
+/**
+ * Extrae valores financieros del texto hasta el próximo label-word.
+ * Devuelve los amounts en orden de aparición.
+ */
+function extractAmounts(text: string): number[] {
+    const stop = LABEL_STOP_RE.exec(text);
+    const region = stop ? text.slice(0, stop.index) : text;
+
+    const found: Array<{ index: number; value: number }> = [];
+
+    // Negativos: (1,234,567)
+    const negRe = /\(\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*\)/g;
+    let m: RegExpExecArray | null;
+    while ((m = negRe.exec(region)) !== null) {
+        const val = parseFloat(m[1].replace(/,/g, ""));
+        if (!isNaN(val) && val >= 100) found.push({ index: m.index, value: -val });
+    }
+
+    // Positivos: número con comas (miles) o 4+ dígitos, no seguido de % ni )
+    const posRe = /(?<!\()\b(\d{1,3}(?:,\d{3})+|\d{4,})\b(?!\s*%|\.\d+%|\s*\))/g;
+    while ((m = posRe.exec(region)) !== null) {
+        const val = parseFloat(m[1].replace(/,/g, ""));
+        if (!isNaN(val) && val >= 100 && !(val >= 1900 && val <= 2100)) {
+            found.push({ index: m.index, value: val });
+        }
+    }
+
+    return found.sort((a, b) => a.index - b.index).map(f => f.value);
+}
+
+// ─── findFieldAll ─────────────────────────────────────────────────────────────
+
+/**
+ * Busca un campo usando ventana deslizante y devuelve los valores de TODOS los períodos.
+ * El PDF tiene N columnas de valores por fila (una por período).
+ *
+ * @param precedingExclude  Si el texto ANTES del match (en la ventana o en las 2 líneas
+ *                          anteriores) coincide con este patrón, se descarta el match.
+ *                          Útil para evitar falsos positivos ("impuestos" dentro de
+ *                          "UT. Antes de impuestos").
+ */
+function findFieldAll(
+    rawLines: string[],
+    pattern: RegExp,
+    numPeriods: number,
+    precedingExclude?: RegExp,
+): (number | null)[] {
+    const lines = rawLines.map(preprocessText);
+    const empty: (number | null)[] = Array(numPeriods).fill(null);
+
     for (let i = 0; i < lines.length; i++) {
-        const line = lines[i].trim();
-        if (!pattern.test(line)) continue;
+        for (let w = 1; w <= 4 && i + w <= lines.length; w++) {
+            const window = lines.slice(i, i + w).join(" ");
+            const match = pattern.exec(window);
+            if (!match) continue;
 
-        // Busca todos los números en la línea
-        const nums = [...line.matchAll(/\(?\s*[\d,]+\.?\d*\s*\)?/g)].map(m => m[0].trim());
-        if (nums.length > 0) {
-            // Toma el último número (columna más reciente en documentos multi-período)
-            const val = extractNumber(nums[nums.length - 1]);
-            if (val !== null && val > 0) return val;
-        }
+            // Si el contexto anterior contiene una cadena que invalida este match, saltar
+            if (precedingExclude) {
+                const beforeMatch = window.slice(0, match.index);
+                const prevLines  = lines.slice(Math.max(0, i - 2), i).join(" ");
+                if (precedingExclude.test(beforeMatch) || precedingExclude.test(prevLines)) {
+                    break; // descartar esta posición i, probar la siguiente
+                }
+            }
 
-        // Si no hay número en la misma línea, busca en las siguientes 2 líneas
-        for (let j = i + 1; j <= Math.min(i + 2, lines.length - 1); j++) {
-            const nextLine = lines[j].trim();
-            const val = extractNumber(nextLine);
-            if (val !== null) return val;
+            const afterLabel = window.slice(match.index + match[0].length);
+            let amounts = extractAmounts(afterLabel);
+
+            if (amounts.length === 0 && i + w < lines.length) {
+                const nextText = lines.slice(i + w, i + w + 8).join(" ");
+                amounts = extractAmounts(nextText);
+            }
+
+            if (amounts.length > 0) {
+                return Array.from({ length: numPeriods }, (_, p) =>
+                    p < amounts.length ? amounts[p] : null
+                );
+            }
+
+            if (w > 1) break;
         }
     }
-    return null;
+    return empty;
 }
 
-/** Detecta períodos en el texto (ej. "31/12/2020", "2020", "Dic 2020") */
+// ─── Detectar períodos ────────────────────────────────────────────────────────
+
 function detectPeriodos(text: string): string[] {
-    const fechas = new Set<string>();
-
-    // Formato DD/MM/YYYY
-    const fullDates = text.matchAll(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/g);
-    for (const m of fullDates) fechas.add(m[0]);
-
-    // Solo año (4 dígitos 20xx)
-    const years = text.matchAll(/\b(20\d{2})\b/g);
-    for (const m of years) fechas.add(m[1]);
-
-    return [...fechas].slice(0, 4);
+    const seen = new Set<string>();
+    const yearsInFullDates = new Set<string>();
+    for (const m of text.matchAll(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/g)) {
+        seen.add(m[0]);
+        yearsInFullDates.add(m[0].slice(-4));
+    }
+    // Only add bare years if not already covered by a full date
+    for (const m of text.matchAll(/\b(20\d{2})\b/g)) {
+        if (!yearsInFullDates.has(m[1])) seen.add(m[1]);
+    }
+    return [...seen].slice(0, 4);
 }
 
 // ─── Parser Principal ─────────────────────────────────────────────────────────
 
 export function parseFinancialStatement(text: string): ParsedFinancialStatement {
     const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
-
-    const bg: BalanceGeneral = {
-        activoCirculante: findField(lines, PATTERNS.activoCirculante),
-        inventarios: findField(lines, PATTERNS.inventarios),
-        clientes: findField(lines, PATTERNS.clientes),
-        deudoresDiversos: findField(lines, PATTERNS.deudoresDiversos),
-        activoFijo: findField(lines, PATTERNS.activoFijo),
-        terrenosEdificios: findField(lines, PATTERNS.terrenosEdificios),
-        maquinariaEquipo: findField(lines, PATTERNS.maquinariaEquipo),
-        equipoTransporte: findField(lines, PATTERNS.equipoTransporte),
-        otrosActivos: findField(lines, PATTERNS.otrosActivos),
-        intangibles: findField(lines, PATTERNS.intangibles),
-        activoTotal: findField(lines, PATTERNS.activoTotal),
-        pasivoCirculante: findField(lines, PATTERNS.pasivoCirculante),
-        proveedores: findField(lines, PATTERNS.proveedores),
-        acreedoresDiversos: findField(lines, PATTERNS.acreedoresDiversos),
-        docsPagarCP: findField(lines, PATTERNS.docsPagarCP),
-        pasivoLargoPlazo: findField(lines, PATTERNS.pasivoLargoPlazo),
-        docsPagarLP: findField(lines, PATTERNS.docsPagarLP),
-        otrosPasivos: findField(lines, PATTERNS.otrosPasivos),
-        pasivoTotal: findField(lines, PATTERNS.pasivoTotal),
-        capitalSocial: findField(lines, PATTERNS.capitalSocial),
-        utilidadesAnteriores: findField(lines, PATTERNS.utilidadesAnteriores),
-        capitalContable: findField(lines, PATTERNS.capitalContable),
-    };
-
-    const er: EstadoResultados = {
-        ventas: findField(lines, PATTERNS.ventas),
-        costoVenta: findField(lines, PATTERNS.costoVenta),
-        utilidadBruta: findField(lines, PATTERNS.utilidadBruta),
-        gastosOperacion: findField(lines, PATTERNS.gastosOperacion),
-        utilidadOperacion: findField(lines, PATTERNS.utilidadOperacion),
-        gastosFinancieros: findField(lines, PATTERNS.gastosFinancieros),
-        otrosProductos: findField(lines, PATTERNS.otrosProductos),
-        otrosGastos: findField(lines, PATTERNS.otrosGastos),
-        utilidadAntesImpuestos: findField(lines, PATTERNS.utilidadAntesImpuestos),
-        impuestos: findField(lines, PATTERNS.impuestos),
-        depreciacion: findField(lines, PATTERNS.depreciacion),
-        utilidadNeta: findField(lines, PATTERNS.utilidadNeta),
-    };
-
-    const kpis = calcularKPIs(bg, er);
     const periodos = detectPeriodos(text);
+    const numPeriods = Math.max(1, periodos.length);
 
-    return { balanceGeneral: bg, estadoResultados: er, kpis, periodos, rawText: text };
+    // Extract all field arrays (one value per period per field)
+    const all: Record<string, (number | null)[]> = {};
+    for (const [key, pattern] of Object.entries(PATTERNS)) {
+        // "impuestos" aparece también dentro de "UT. Antes de impuestos" → excluir ese contexto
+        const precedingExclude = key === "impuestos" ? /antes\s*de\s*$/i : undefined;
+        all[key] = findFieldAll(lines, pattern, numPeriods, precedingExclude);
+    }
+
+    // Build per-period objects
+    const periodData: FinancialPeriod[] = periodos.map((periodo, p) => {
+        const bg: BalanceGeneral = {
+            // Subtitle totals — always null here, always derived below
+            activoCirculante:    null,
+            activoFijo:          null,
+            pasivoCirculante:    null,
+            pasivoLargoPlazo:    null,
+            capitalContable:     null,
+            // Line-items: from OCR
+            inventarios:         all.inventarios[p],
+            clientes:            all.clientes[p],
+            deudoresDiversos:    all.deudoresDiversos[p],
+            terrenosEdificios:   all.terrenosEdificios[p],
+            maquinariaEquipo:    all.maquinariaEquipo[p],
+            equipoTransporte:    all.equipoTransporte[p],
+            otrosActivos:        all.otrosActivos[p],
+            intangibles:         all.intangibles[p],
+            activoTotal:         all.activoTotal[p],
+            proveedores:         all.proveedores[p],
+            acreedoresDiversos:  all.acreedoresDiversos[p],
+            docsPagarCP:         all.docsPagarCP[p],
+            docsPagarLP:         all.docsPagarLP[p],
+            otrosPasivos:        all.otrosPasivos[p],
+            pasivoTotal:         all.pasivoTotal[p],
+            capitalSocial:       all.capitalSocial[p],
+            utilidadesAnteriores:all.utilidadesAnteriores[p],
+        };
+
+        const er: EstadoResultados = {
+            ventas:                 all.ventas[p],
+            costoVenta:             all.costoVenta[p],
+            utilidadBruta:          all.utilidadBruta[p],
+            gastosOperacion:        all.gastosOperacion[p],
+            utilidadOperacion:      all.utilidadOperacion[p],
+            gastosFinancieros:      all.gastosFinancieros[p],
+            otrosProductos:         all.otrosProductos[p],
+            otrosGastos:            all.otrosGastos[p],
+            utilidadAntesImpuestos: all.utilidadAntesImpuestos[p],
+            impuestos:              all.impuestos[p],
+            depreciacion:           all.depreciacion[p],
+            utilidadNeta:           all.utilidadNeta[p],
+        };
+
+        deriveFields(bg, er);
+        const kpis = calcularKPIs(bg, er);
+        return { periodo, balanceGeneral: bg, estadoResultados: er, kpis };
+    });
+
+    // Backward-compat: expose most recent period at top level
+    const last = periodData[periodData.length - 1];
+    return {
+        periodos,
+        periodData,
+        rawText: text,
+        balanceGeneral: last?.balanceGeneral ?? emptyBG(),
+        estadoResultados: last?.estadoResultados ?? emptyER(),
+        kpis: last?.kpis ?? emptyKPIs(),
+    };
+}
+
+// ─── Derivación por fórmulas contables ───────────────────────────────────────
+
+function sumKnown(...vals: (number | null)[]): number {
+    return vals.reduce<number>((acc, v) => acc + (v ?? 0), 0);
+}
+
+function deriveFields(bg: BalanceGeneral, er: EstadoResultados): void {
+    // ── Estado de Resultados ───────────────────────────────────────────────────
+    if (er.utilidadBruta === null && er.ventas !== null && er.costoVenta !== null)
+        er.utilidadBruta = er.ventas - er.costoVenta;
+    if (er.costoVenta === null && er.ventas !== null && er.utilidadBruta !== null)
+        er.costoVenta = er.ventas - er.utilidadBruta;
+    if (er.utilidadOperacion === null && er.utilidadBruta !== null && er.gastosOperacion !== null)
+        er.utilidadOperacion = er.utilidadBruta - er.gastosOperacion;
+    if (er.gastosOperacion === null && er.utilidadBruta !== null && er.utilidadOperacion !== null)
+        er.gastosOperacion = er.utilidadBruta - er.utilidadOperacion;
+    if (er.utilidadAntesImpuestos === null && er.utilidadOperacion !== null)
+        er.utilidadAntesImpuestos = er.utilidadOperacion
+            - (er.gastosFinancieros ?? 0)
+            + (er.otrosProductos ?? 0)
+            - (er.otrosGastos ?? 0);
+    if (er.utilidadNeta === null && er.utilidadAntesImpuestos !== null && er.impuestos !== null)
+        er.utilidadNeta = er.utilidadAntesImpuestos - er.impuestos;
+
+    // ── Balance General — Subtítulos siempre derivados (son encabezados sin valor) ──
+    // Activo Circulante = Inventarios + Clientes + Deudores Diversos
+    {
+        const parts = [bg.inventarios, bg.clientes, bg.deudoresDiversos];
+        if (parts.some(v => v !== null))
+            bg.activoCirculante = sumKnown(...parts);
+    }
+    // Activo Fijo = Terrenos + Maquinaria + Equipo Transporte
+    {
+        const parts = [bg.terrenosEdificios, bg.maquinariaEquipo, bg.equipoTransporte];
+        if (parts.some(v => v !== null))
+            bg.activoFijo = sumKnown(...parts);
+    }
+    // Activo Total: si no está en el PDF, derivar
+    if (bg.activoTotal === null) {
+        const parts = [bg.activoCirculante, bg.activoFijo, bg.otrosActivos, bg.intangibles];
+        if (parts.some(v => v !== null))
+            bg.activoTotal = sumKnown(...parts);
+    }
+    // Pasivo Circulante = Proveedores + Acreedores + Docs CP
+    {
+        const parts = [bg.proveedores, bg.acreedoresDiversos, bg.docsPagarCP];
+        if (parts.some(v => v !== null))
+            bg.pasivoCirculante = sumKnown(...parts);
+    }
+    // Pasivo Largo Plazo = Docs LP + Otros Pasivos
+    {
+        const parts = [bg.docsPagarLP, bg.otrosPasivos];
+        if (parts.some(v => v !== null))
+            bg.pasivoLargoPlazo = sumKnown(...parts);
+    }
+    // Pasivo Total: si no está en el PDF, derivar
+    if (bg.pasivoTotal === null) {
+        const parts = [bg.pasivoCirculante, bg.pasivoLargoPlazo];
+        if (parts.some(v => v !== null))
+            bg.pasivoTotal = sumKnown(...parts);
+    }
+    // Capital Contable: siempre por fórmula (el PDF tiene 2 ocurrencias, la primera es incorrecta)
+    if (bg.activoTotal !== null && bg.pasivoTotal !== null)
+        bg.capitalContable = bg.activoTotal - bg.pasivoTotal;
 }
 
 // ─── Cálculo de KPIs ──────────────────────────────────────────────────────────
-
-function safe(n: number | null): number | null {
-    return n !== null && n !== 0 ? n : null;
-}
 
 function ratio(a: number | null, b: number | null, decimals = 2): number | null {
     if (a === null || b === null || b === 0) return null;
@@ -243,13 +465,10 @@ function ratio(a: number | null, b: number | null, decimals = 2): number | null 
 
 export function calcularKPIs(bg: BalanceGeneral, er: EstadoResultados): KPIs {
     return {
-        // Liquidez
         liquidezCirculante: ratio(bg.activoCirculante, bg.pasivoCirculante),
         pruebaAcido: bg.activoCirculante !== null && bg.inventarios !== null
             ? ratio(bg.activoCirculante - bg.inventarios, bg.pasivoCirculante)
             : null,
-
-        // Actividad
         rotacionCxC: ratio(er.ventas, bg.clientes),
         rotacionCxP: bg.proveedores !== null && er.costoVenta !== null
             ? ratio(bg.proveedores * 365, er.costoVenta)
@@ -257,18 +476,41 @@ export function calcularKPIs(bg: BalanceGeneral, er: EstadoResultados): KPIs {
         rotacionInventarios: bg.inventarios !== null && er.costoVenta !== null
             ? ratio(bg.inventarios * 365, er.costoVenta)
             : null,
-
-        // Apalancamiento
-        deudaTotal: ratio(bg.pasivoTotal, bg.activoTotal),
+        deudaTotal:  ratio(bg.pasivoTotal, bg.activoTotal),
         deudaCapital: ratio(bg.pasivoTotal, bg.capitalContable),
         deudaLP: bg.pasivoLargoPlazo !== null && bg.activoTotal !== null && bg.pasivoTotal !== null
-            ? ratio(bg.pasivoLargoPlazo, bg.activoTotal - (bg.pasivoTotal ?? 0))
+            ? ratio(bg.pasivoLargoPlazo, bg.activoTotal - bg.pasivoTotal)
             : null,
-
-        // Rentabilidad
         margenUtilidad: ratio(er.utilidadNeta, er.ventas),
         roa: ratio(er.utilidadNeta, bg.activoTotal),
         roe: ratio(er.utilidadNeta, bg.capitalContable),
+    };
+}
+
+// ─── Helpers para período vacío ───────────────────────────────────────────────
+
+function emptyBG(): BalanceGeneral {
+    return {
+        activoCirculante: null, inventarios: null, clientes: null, deudoresDiversos: null,
+        activoFijo: null, terrenosEdificios: null, maquinariaEquipo: null, equipoTransporte: null,
+        otrosActivos: null, intangibles: null, activoTotal: null,
+        pasivoCirculante: null, proveedores: null, acreedoresDiversos: null, docsPagarCP: null,
+        pasivoLargoPlazo: null, docsPagarLP: null, otrosPasivos: null, pasivoTotal: null,
+        capitalSocial: null, utilidadesAnteriores: null, capitalContable: null,
+    };
+}
+function emptyER(): EstadoResultados {
+    return {
+        ventas: null, costoVenta: null, utilidadBruta: null, gastosOperacion: null,
+        utilidadOperacion: null, gastosFinancieros: null, otrosProductos: null, otrosGastos: null,
+        utilidadAntesImpuestos: null, impuestos: null, depreciacion: null, utilidadNeta: null,
+    };
+}
+function emptyKPIs(): KPIs {
+    return {
+        liquidezCirculante: null, pruebaAcido: null, rotacionCxC: null, rotacionCxP: null,
+        rotacionInventarios: null, deudaTotal: null, deudaCapital: null, deudaLP: null,
+        margenUtilidad: null, roa: null, roe: null,
     };
 }
 

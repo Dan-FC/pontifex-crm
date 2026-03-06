@@ -33,6 +33,7 @@ type ApiExpediente = {
     completitud: number;
     observaciones: string;
     alertas: string;        // JSON string "[...]"
+    matrizRiesgo: string;   // JSON string "{factorId: opcionId}"
     fechaAlta: string;
     ultimaActualizacion: string;
     documentos?: any[];
@@ -319,6 +320,7 @@ interface UploadedDocInfo {
     nombre: string;
     estatus: string;
     url?: string;
+    docDbId?: string;   // DB id del registro creado (para PATCH/DELETE)
     // Bank statement OCR
     ingresos?: string;
     egresos?: string;
@@ -330,7 +332,17 @@ interface UploadedDocInfo {
     financialData?: any;
 }
 
-const FINANCIAL_STATEMENT_IDS = ["estados-fin-2019", "estados-fin-2020", "estado-fin-parcial"];
+type DbDoc = {
+    id: string;
+    tipo: string;
+    nombre: string;
+    estatus: string;
+    fecha: string;
+    url?: string;
+    datosExtraidos?: string;
+};
+
+const FINANCIAL_STATEMENT_IDS = ["estados-financieros"];
 
 function DocUploadPanel({
     docId, docNombre, casoId,
@@ -383,8 +395,9 @@ function DocUploadPanel({
                 const ocrData = await ocrRes.json();
                 if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
 
-                // 2. Registrar en DB y subir a Supabase
+                // 2. Registrar en DB y subir a Supabase (incluye datos extraídos)
                 formData.append("estatus", "Procesado");
+                formData.append("datosExtraidos", JSON.stringify(ocrData.data));
                 const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
                 const regData = await regRes.json();
                 if (!regRes.ok) throw new Error(regData.error || "Error al registrar");
@@ -392,6 +405,7 @@ function DocUploadPanel({
                 onSuccess({
                     nombre: f.name, estatus: "Procesado",
                     url: regData.data?.url,
+                    docDbId: regData.data?.id,
                     financialData: ocrData.data,
                 });
             } else {
@@ -550,12 +564,23 @@ function BankStatementPreview({ info, casoId }: { info: UploadedDocInfo; casoId:
 function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
     const d = info.financialData;
     if (!d) return null;
-    const bg = d.balanceGeneral;
-    const er = d.estadoResultados;
-    const kp = d.kpis;
+
+    const [activePeriod, setActivePeriod] = useState(0);
+    const [showRaw, setShowRaw] = useState(false);
+
+    const periodData: any[] = d.periodData ?? [];
+    const periodos: string[] = d.periodos ?? [];
+
+    // Active period data (fallback to top-level for older responses)
+    const current = periodData[activePeriod] ?? { balanceGeneral: d.balanceGeneral, estadoResultados: d.estadoResultados, kpis: d.kpis };
+    const bg = current.balanceGeneral;
+    const er = current.estadoResultados;
+    const kp = current.kpis;
 
     const fmt = (v: number | null) =>
-        v !== null ? `$${v.toLocaleString("es-MX", { minimumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>;
+        v !== null ? `$${Math.round(v).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>;
+    const fmtSub = (v: number | null): string | null =>
+        v !== null ? `$${Math.round(v).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null;
     const fmtPct = (v: number | null) =>
         v !== null ? `${(v * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>;
     const fmtX = (v: number | null) =>
@@ -563,120 +588,167 @@ function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
     const fmtDias = (v: number | null) =>
         v !== null ? `${Math.round(v)} días` : <span className="text-gray-300">—</span>;
 
-    const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
-        <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
-            <span className="text-xs text-gray-500">{label}</span>
+    const Row = ({ label, value, indent }: { label: string; value: React.ReactNode; indent?: boolean }) => (
+        <div className={`flex justify-between items-center py-1.5 hover:bg-gray-50/70 transition-colors rounded-md px-1 ${indent ? "pl-5" : ""}`}>
+            <span className="text-xs text-gray-600">{label}</span>
             <span className="text-xs font-semibold text-gray-800">{value}</span>
         </div>
     );
 
-    const SectionTitle = ({ title, color }: { title: string; color: string }) => (
-        <p className={`text-xs font-bold uppercase tracking-wide mb-2 mt-3 first:mt-0 ${color}`}>{title}</p>
-    );
+    const SubTotal = ({ label, value, color }: { label: string; value: React.ReactNode; color: string }) => {
+        const cls: Record<string, string> = {
+            emerald: "bg-emerald-50 text-emerald-700 border-emerald-400",
+            red: "bg-red-50 text-red-700 border-red-400",
+            indigo: "bg-indigo-50 text-indigo-700 border-indigo-400",
+            blue: "bg-blue-50 text-blue-700 border-blue-400",
+            amber: "bg-amber-50 text-amber-700 border-amber-400",
+            purple: "bg-purple-50 text-purple-700 border-purple-400",
+        };
+        return (
+            <div className={`flex justify-between items-center py-1.5 mt-2 mb-0.5 rounded-lg px-3 border-l-2 ${cls[color]}`}>
+                <span className="text-xs font-bold tracking-wide">{label}</span>
+                {value != null && <span className="text-sm font-extrabold">{value}</span>}
+            </div>
+        );
+    };
+
+    const TotalBar = ({ label, value, color }: { label: string; value: React.ReactNode; color: string }) => {
+        const cls: Record<string, string> = {
+            emerald: "from-emerald-600 to-emerald-500",
+            red: "from-red-600 to-red-500",
+            indigo: "from-indigo-600 to-indigo-500",
+            purple: "from-purple-600 to-purple-500",
+        };
+        return (
+            <div className={`flex justify-between items-center py-2 mt-2 px-3 rounded-xl bg-gradient-to-r ${cls[color]} shadow-sm`}>
+                <span className="text-xs font-black text-white uppercase tracking-wider">{label}</span>
+                <span className="text-sm font-black text-white">{value}</span>
+            </div>
+        );
+    };
+
+    const SectionLabel = ({ children, color }: { children: React.ReactNode; color: "emerald" | "red" | "indigo" }) => {
+        const bar = { emerald: "bg-emerald-400", red: "bg-red-400", indigo: "bg-indigo-400" }[color];
+        const text = { emerald: "text-emerald-600", red: "text-red-600", indigo: "text-indigo-600" }[color];
+        return (
+            <div className="flex items-center gap-2 mt-4 mb-1">
+                <div className={`w-1 h-3.5 rounded-full ${bar}`} />
+                <span className={`text-xs font-bold uppercase tracking-widest ${text}`}>{children}</span>
+            </div>
+        );
+    };
 
     return (
         <div className="mt-4 space-y-4">
+            {/* Period selector — centered segmented control */}
+            {periodos.length > 1 && (
+                <div className="flex justify-center">
+                    <div className="inline-flex bg-gray-100 rounded-xl p-1 gap-0.5">
+                        {periodos.map((p, i) => (
+                            <button
+                                key={p}
+                                onClick={() => setActivePeriod(i)}
+                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                                    activePeriod === i
+                                        ? "bg-white text-blue-700 shadow-sm"
+                                        : "text-gray-400 hover:text-gray-600"
+                                }`}
+                            >
+                                {p}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Balance General + Estado de Resultados */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Balance General */}
                 <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
-                    <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-100 flex items-center gap-2">
-                        <BarChart2 className="w-3.5 h-3.5 text-blue-600" />
-                        <span className="text-xs font-bold text-blue-700">Balance General</span>
-                        {d.periodos?.length > 0 && <span className="ml-auto text-xs text-blue-400">{d.periodos[d.periodos.length - 1]}</span>}
+                    <div className="px-4 py-3 bg-gradient-to-r from-blue-700 to-blue-500 flex items-center gap-2">
+                        <BarChart2 className="w-4 h-4 text-white/70" />
+                        <span className="text-sm font-bold text-white">Balance General</span>
+                        {periodos[activePeriod] && (
+                            <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
+                        )}
                     </div>
                     <div className="p-4">
-                        <SectionTitle title="Activo" color="text-emerald-600" />
-                        <Row label="Activo Circulante" value={fmt(bg.activoCirculante)} />
-                        <Row label="Inventarios" value={fmt(bg.inventarios)} />
-                        <Row label="Clientes" value={fmt(bg.clientes)} />
-                        <Row label="Deudores Diversos" value={fmt(bg.deudoresDiversos)} />
-                        <Row label="Activo Fijo" value={fmt(bg.activoFijo)} />
-                        <Row label="Terrenos y Edificios" value={fmt(bg.terrenosEdificios)} />
-                        <Row label="Maquinaria y Equipo" value={fmt(bg.maquinariaEquipo)} />
-                        <Row label="Equipo de Transporte" value={fmt(bg.equipoTransporte)} />
-                        <Row label="Otros Activos" value={fmt(bg.otrosActivos)} />
-                        <Row label="Intangibles" value={fmt(bg.intangibles)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-emerald-50 rounded-lg px-2">
-                            <span className="text-xs font-bold text-emerald-700">ACTIVO TOTAL</span>
-                            <span className="text-sm font-extrabold text-emerald-700">{fmt(bg.activoTotal)}</span>
-                        </div>
+                        <SectionLabel color="emerald">Activo</SectionLabel>
+                        <SubTotal label="Activo Circulante" value={fmtSub(bg.activoCirculante)} color="emerald" />
+                        <Row label="Inventarios" value={fmt(bg.inventarios)} indent />
+                        <Row label="Clientes" value={fmt(bg.clientes)} indent />
+                        <Row label="Deudores Diversos" value={fmt(bg.deudoresDiversos)} indent />
+                        <SubTotal label="Activo Fijo" value={fmtSub(bg.activoFijo)} color="emerald" />
+                        <Row label="Terrenos y Edificios" value={fmt(bg.terrenosEdificios)} indent />
+                        <Row label="Maquinaria y Equipo" value={fmt(bg.maquinariaEquipo)} indent />
+                        <Row label="Equipo de Transporte" value={fmt(bg.equipoTransporte)} indent />
+                        <SubTotal label="Otros Activos" value={fmtSub(bg.otrosActivos)} color="emerald" />
+                        <Row label="Intangibles" value={fmt(bg.intangibles)} indent />
+                        <TotalBar label="Activo Total" value={fmt(bg.activoTotal)} color="emerald" />
 
-                        <SectionTitle title="Pasivo" color="text-red-600" />
-                        <Row label="Pasivo Circulante" value={fmt(bg.pasivoCirculante)} />
-                        <Row label="Proveedores" value={fmt(bg.proveedores)} />
-                        <Row label="Acreedores Div." value={fmt(bg.acreedoresDiversos)} />
-                        <Row label="Docs. x pagar CP" value={fmt(bg.docsPagarCP)} />
-                        <Row label="Pasivo Largo Plazo" value={fmt(bg.pasivoLargoPlazo)} />
-                        <Row label="Docs. x pagar LP" value={fmt(bg.docsPagarLP)} />
-                        <Row label="Otros Pasivos" value={fmt(bg.otrosPasivos)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-red-50 rounded-lg px-2">
-                            <span className="text-xs font-bold text-red-700">PASIVO TOTAL</span>
-                            <span className="text-sm font-extrabold text-red-700">{fmt(bg.pasivoTotal)}</span>
-                        </div>
+                        <SectionLabel color="red">Pasivo</SectionLabel>
+                        <SubTotal label="Pasivo Circulante" value={fmtSub(bg.pasivoCirculante)} color="red" />
+                        <Row label="Proveedores" value={fmt(bg.proveedores)} indent />
+                        <Row label="Acreedores Diversos" value={fmt(bg.acreedoresDiversos)} indent />
+                        <Row label="Documentos por Pagar Corto Plazo" value={fmt(bg.docsPagarCP)} indent />
+                        <SubTotal label="Pasivo Largo Plazo" value={fmtSub(bg.pasivoLargoPlazo)} color="red" />
+                        <Row label="Documentos por Pagar Largo Plazo" value={fmt(bg.docsPagarLP)} indent />
+                        <Row label="Otros Pasivos" value={fmt(bg.otrosPasivos)} indent />
+                        <TotalBar label="Pasivo Total" value={fmt(bg.pasivoTotal)} color="red" />
 
-                        <SectionTitle title="Capital" color="text-indigo-600" />
+                        <SectionLabel color="indigo">Capital</SectionLabel>
                         <Row label="Capital Social" value={fmt(bg.capitalSocial)} />
-                        <Row label="Ut. Ejercicios anteriores" value={fmt(bg.utilidadesAnteriores)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-indigo-50 rounded-lg px-2">
-                            <span className="text-xs font-bold text-indigo-700">CAPITAL CONTABLE</span>
-                            <span className="text-sm font-extrabold text-indigo-700">{fmt(bg.capitalContable)}</span>
-                        </div>
+                        <Row label="Utilidad de Ejercicios Anteriores" value={fmt(bg.utilidadesAnteriores)} />
+                        <TotalBar label="Capital Contable" value={fmt(bg.capitalContable)} color="indigo" />
                     </div>
                 </div>
 
                 {/* Estado de Resultados */}
                 <div className="bg-white border border-purple-100 rounded-xl overflow-hidden shadow-sm">
-                    <div className="px-4 py-2.5 bg-purple-50 border-b border-purple-100 flex items-center gap-2">
-                        <BarChart2 className="w-3.5 h-3.5 text-purple-600" />
-                        <span className="text-xs font-bold text-purple-700">Estado de Resultados</span>
+                    <div className="px-4 py-3 bg-gradient-to-r from-violet-700 to-purple-500 flex items-center gap-2">
+                        <BarChart2 className="w-4 h-4 text-white/70" />
+                        <span className="text-sm font-bold text-white">Estado de Resultados</span>
+                        {periodos[activePeriod] && (
+                            <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
+                        )}
                     </div>
                     <div className="p-4">
-                        <Row label="VENTAS" value={fmt(er.ventas)} />
-                        <Row label="Costos de Venta" value={fmt(er.costoVenta)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-emerald-50 rounded-lg px-2 mb-2">
-                            <span className="text-xs font-bold text-emerald-700">Ut. Bruta</span>
-                            <span className="text-sm font-extrabold text-emerald-700">{fmt(er.utilidadBruta)}</span>
-                        </div>
-                        <Row label="Gastos de Op." value={fmt(er.gastosOperacion)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-blue-50 rounded-lg px-2 mb-2">
-                            <span className="text-xs font-bold text-blue-700">UT. de Operación</span>
-                            <span className="text-sm font-extrabold text-blue-700">{fmt(er.utilidadOperacion)}</span>
-                        </div>
-                        <Row label="Gastos Fin." value={fmt(er.gastosFinancieros)} />
-                        <Row label="Otros Productos" value={fmt(er.otrosProductos)} />
-                        <Row label="Otros Gastos" value={fmt(er.otrosGastos)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-amber-50 rounded-lg px-2 mb-2">
-                            <span className="text-xs font-bold text-amber-700">UT. Antes de Impuestos</span>
-                            <span className="text-sm font-extrabold text-amber-700">{fmt(er.utilidadAntesImpuestos)}</span>
-                        </div>
-                        <Row label="Impuestos" value={fmt(er.impuestos)} />
-                        <Row label="Depreciación" value={fmt(er.depreciacion)} />
-                        <div className="flex justify-between items-center py-1.5 mt-1 bg-purple-50 rounded-lg px-2">
-                            <span className="text-xs font-bold text-purple-700">UTILIDAD NETA</span>
-                            <span className="text-sm font-extrabold text-purple-700">{fmt(er.utilidadNeta)}</span>
-                        </div>
+                        <SubTotal label="VENTAS" value={fmt(er.ventas)} color="purple" />
+                        <Row label="Costos de Venta" value={fmt(er.costoVenta)} indent />
+                        <SubTotal label="Utilidad Bruta" value={fmtSub(er.utilidadBruta)} color="emerald" />
+                        <Row label="Gastos de Operación" value={fmt(er.gastosOperacion)} indent />
+                        <SubTotal label="Utilidad de Operación" value={fmtSub(er.utilidadOperacion)} color="blue" />
+                        <Row label="Gastos Financieros" value={fmt(er.gastosFinancieros)} indent />
+                        <Row label="Otros Productos" value={fmt(er.otrosProductos)} indent />
+                        <Row label="Otros Gastos" value={fmt(er.otrosGastos)} indent />
+                        <SubTotal label="Utilidad Antes de Impuestos" value={fmtSub(er.utilidadAntesImpuestos)} color="amber" />
+                        <Row label="Impuestos" value={fmt(er.impuestos)} indent />
+                        <Row label="Depreciación" value={fmt(er.depreciacion)} indent />
+                        <TotalBar label="Utilidad Neta" value={fmt(er.utilidadNeta)} color="purple" />
                     </div>
                 </div>
             </div>
 
             {/* KPIs */}
-            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center gap-2">
-                    <BarChart2 className="w-3.5 h-3.5 text-gray-600" />
-                    <span className="text-xs font-bold text-gray-700">KPIs calculados automáticamente</span>
+            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 bg-gradient-to-r from-gray-700 to-gray-500 flex items-center gap-2">
+                    <BarChart2 className="w-4 h-4 text-white/70" />
+                    <span className="text-sm font-bold text-white">Indicadores Financieros</span>
+                    {periodos[activePeriod] && (
+                        <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
+                    )}
                 </div>
                 <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                         { label: "Liquidez Circulante", value: fmtX(kp.liquidezCirculante), color: "blue" },
                         { label: "Prueba del Ácido", value: fmtX(kp.pruebaAcido), color: "blue" },
-                        { label: "Rotación CxC", value: fmtX(kp.rotacionCxC), color: "emerald" },
-                        { label: "Rotación CxP", value: fmtDias(kp.rotacionCxP), color: "emerald" },
+                        { label: "Rotación Cuentas por Cobrar", value: fmtX(kp.rotacionCxC), color: "emerald" },
+                        { label: "Rotación Cuentas por Pagar", value: fmtDias(kp.rotacionCxP), color: "emerald" },
                         { label: "Rotación Inventarios", value: fmtDias(kp.rotacionInventarios), color: "emerald" },
                         { label: "Deuda Total", value: fmtPct(kp.deudaTotal), color: "amber" },
                         { label: "Deuda / Capital", value: fmtX(kp.deudaCapital), color: "amber" },
-                        { label: "Deuda LP", value: fmtX(kp.deudaLP), color: "amber" },
-                        { label: "Margen Utilidad", value: fmtPct(kp.margenUtilidad), color: "purple" },
+                        { label: "Deuda Largo Plazo", value: fmtX(kp.deudaLP), color: "amber" },
+                        { label: "Margen de Utilidad", value: fmtPct(kp.margenUtilidad), color: "purple" },
                         { label: "ROA", value: fmtPct(kp.roa), color: "purple" },
                         { label: "ROE", value: fmtPct(kp.roe), color: "purple" },
                     ].map(({ label, value, color }) => {
@@ -695,6 +767,21 @@ function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
                     })}
                 </div>
             </div>
+
+            {/* Debug: texto crudo extraído del PDF */}
+            <div className="mt-3">
+                <button
+                    onClick={() => setShowRaw(r => !r)}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+                >
+                    {showRaw ? "▲ Ocultar texto extraído" : "▼ Ver texto crudo del PDF (debug)"}
+                </button>
+                {showRaw && (
+                    <pre className="mt-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-3 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+                        {d.rawText ?? "No disponible"}
+                    </pre>
+                )}
+            </div>
         </div>
     );
 }
@@ -702,10 +789,30 @@ function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
 // ─── Tab: Documentos ──────────────────────────────────────────────────────────
 function TabDocumentos({ caso }: { caso: Case }) {
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
-    // Local uploaded docs this session: docId → info
     const [uploaded, setUploaded] = useState<Record<string, UploadedDocInfo>>({});
+    const [toast, setToast] = useState<string | null>(null);
+    const [editingFile, setEditingFile] = useState<{ dbDocId: string; mode: "replace" | "edit" } | null>(null);
+    const [editValues, setEditValues] = useState<Record<string, string>>({});
+    const [editSaving, setEditSaving] = useState(false);
+    const [viewingFile, setViewingFile] = useState<string | null>(null);
+    const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+    const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+    const [localDocs, setLocalDocs] = useState<DbDoc[]>((caso.documentos ?? []) as DbDoc[]);
 
-    const dbDocs = (caso.documentos ?? []) as Array<{ tipo?: string; nombre?: string; estatus?: string }>;
+    const showToast = (msg: string) => {
+        setToast(msg);
+        setTimeout(() => setToast(null), 3000);
+    };
+
+    const refreshDocs = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/expedientes/${caso.id}/documentos`);
+            const json = await res.json();
+            if (json.success) setLocalDocs(json.data as DbDoc[]);
+        } catch { /* ignore */ }
+    }, [caso.id]);
+
+    const dbDocs = localDocs;
 
     const estaEntregado = (docId: string): boolean => {
         if (uploaded[docId]) return true;
@@ -716,6 +823,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
     const pct = Math.round((totalCubiertos / TOTAL_DOCUMENTOS_REQUERIDOS) * 100);
 
     return (
+        <>
         <div className="space-y-3">
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {/* Header */}
@@ -774,87 +882,243 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                         ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                                                         : <div className={`w-4 h-4 rounded-full border-2 flex-shrink-0 ${isSelected ? "border-blue-400" : "border-gray-300"}`} />
                                                     }
-                                                    <span className={`text-sm flex-1 ${entregado ? "text-gray-700" : isSelected ? "text-blue-700 font-medium" : "text-gray-500"}`}>
+                                                    <span className={`text-sm flex-1 flex items-center gap-2 ${entregado ? "text-gray-700" : isSelected ? "text-blue-700 font-medium" : "text-gray-500"}`}>
                                                         {doc.nombre}
-                                                        {(isBankStatement || isFinancialStatement) && !entregado && (
-                                                            <span className="ml-2 text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">OCR</span>
+                                                        {isFinancialStatement && (
+                                                            <span className="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">OCR</span>
+                                                        )}
+                                                        {isFinancialStatement && uploadedInfo?.financialData?.periodos?.length > 0 && (
+                                                            <span className="text-xs text-blue-500 font-semibold">
+                                                                {uploadedInfo.financialData.periodos.join(" · ")}
+                                                            </span>
+                                                        )}
+                                                        {isBankStatement && !entregado && (
+                                                            <span className="text-xs bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-semibold">OCR</span>
                                                         )}
                                                     </span>
-                                                    {entregado
-                                                        ? <span className="text-xs text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">✓ Entregado</span>
-                                                        : <span className={`text-xs font-semibold flex-shrink-0 ${isSelected ? "text-blue-500" : "text-gray-400"}`}>
-                                                            {isSelected ? "▲ Cerrar" : "Subir ›"}
-                                                        </span>
+                                                    {isSelected
+                                                        ? <span className="text-xs font-semibold flex-shrink-0 text-blue-500">▲ Cerrar</span>
+                                                        : entregado
+                                                            ? <span className="text-xs text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">✓ Entregado</span>
+                                                            : <span className="text-xs font-semibold flex-shrink-0 text-gray-400">Subir ›</span>
                                                     }
                                                 </button>
 
                                                 {/* Expanded panel */}
-                                                {isSelected && (
-                                                    <div className="mt-1.5">
-                                                        {entregado ? (
-                                                            <div className="ml-8 mr-2 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
-                                                                <p className="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 mb-2">
-                                                                    <CheckCircle2 className="w-3.5 h-3.5" /> Documento registrado en Supabase
-                                                                </p>
-                                                                {/* Filename */}
-                                                                {(() => {
-                                                                    const dbDoc = dbDocs.find(d => d.tipo === doc.id);
-                                                                    const nombre = uploadedInfo?.nombre ?? dbDoc?.nombre;
-                                                                    const url = uploadedInfo?.url ?? (dbDoc as any)?.url;
-                                                                    return (
-                                                                        <>
-                                                                            {nombre && <p className="text-xs text-gray-500 mb-2">📄 {nombre}</p>}
-                                                                            {url && (
-                                                                                <a href={url} target="_blank" rel="noopener noreferrer"
-                                                                                    className="inline-flex items-center gap-1.5 py-1.5 px-3 bg-white border border-emerald-200 hover:border-emerald-400 text-emerald-700 text-xs font-semibold rounded-lg transition-all hover:bg-emerald-100">
-                                                                                    <Download className="w-3.5 h-3.5" />Descargar PDF
-                                                                                </a>
-                                                                            )}
-                                                                        </>
-                                                                    );
-                                                                })()}
-                                                                {/* Bank statement OCR preview */}
-                                                                {isBankStatement && uploadedInfo && (
-                                                                    <BankStatementPreview info={uploadedInfo} casoId={caso.id} />
-                                                                )}
-                                                                {isBankStatement && !uploadedInfo && dbDocs.some(d => d.estatus === "Procesado") && (
-                                                                    <p className="text-xs text-gray-400 mt-2 italic">Estado de cuenta procesado por OCR previamente. Sube uno nuevo para ver el preview.</p>
-                                                                )}
-                                                                {/* Financial statement OCR preview */}
-                                                                {isFinancialStatement && uploadedInfo?.financialData && (
-                                                                    <FinancialStatementPreview info={uploadedInfo} />
-                                                                )}
-                                                                {isFinancialStatement && !uploadedInfo && dbDocs.some(d => d.tipo === doc.id && d.estatus === "Procesado") && (
-                                                                    <p className="text-xs text-gray-400 mt-2 italic">Documento procesado anteriormente. Sube uno nuevo para ver el análisis.</p>
-                                                                )}
-                                                            </div>
-                                                        ) : (
-                                                            <DocUploadPanel
-                                                                docId={doc.id}
-                                                                docNombre={doc.nombre}
-                                                                casoId={caso.id}
-                                                                onSuccess={info => {
-                                                                    setUploaded(prev => ({ ...prev, [doc.id]: info }));
-                                                                    if (!isBankStatement && !isFinancialStatement) {
-                                                                        setSelectedDocId(null);
-                                                                    }
-                                                                }}
-                                                            />
-                                                        )}
+                                                {isSelected && (() => {
+                                                    const sessionFile = uploadedInfo;
+                                                    // Merge session upload (not yet in dbDocs) with DB records
+                                                    const sessionDoc: DbDoc | null = sessionFile?.docDbId && !dbDocs.some(d => d.id === sessionFile.docDbId)
+                                                        ? { id: sessionFile.docDbId, tipo: doc.id, nombre: sessionFile.nombre, estatus: sessionFile.estatus, fecha: new Date().toISOString(), url: sessionFile.url }
+                                                        : null;
+                                                    const allFiles: DbDoc[] = [
+                                                        ...(sessionDoc ? [sessionDoc] : []),
+                                                        ...dbDocs.filter(d => d.tipo === doc.id),
+                                                    ];
+                                                    return (
+                                                        <div className="mt-1.5 ml-8 mr-2 space-y-2">
+                                                            {/* ── Lista de archivos guardados ── */}
+                                                            {allFiles.filter(f => !deletedIds.has(f.id)).length > 0 && (
+                                                                <div className="space-y-1.5">
+                                                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Archivos guardados</p>
+                                                                    {allFiles.filter(f => !deletedIds.has(f.id)).map((file, idx) => {
+                                                                        const isEditing = editingFile?.dbDocId === file.id;
+                                                                        const isViewing = viewingFile === file.id;
+                                                                        const isConfirmingDelete = confirmDeleteId === file.id;
+                                                                        const parsedData = (() => {
+                                                                            if (sessionFile?.docDbId === file.id) return sessionFile.financialData;
+                                                                            if (file.datosExtraidos) { try { return JSON.parse(file.datosExtraidos); } catch { return null; } }
+                                                                            return null;
+                                                                        })();
+                                                                        return (
+                                                                            <div key={file.id} className="rounded-xl border border-gray-100 overflow-hidden">
+                                                                                {/* File row */}
+                                                                                <div className="flex items-center gap-2 py-2 px-3 bg-gray-50">
+                                                                                    <span className="text-xs text-gray-600 flex-1 truncate">
+                                                                                        📄 {file.nombre}
+                                                                                        {idx === 0 && <span className="ml-2 text-xs bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-semibold">Más reciente</span>}
+                                                                                    </span>
+                                                                                    <span className="text-xs text-gray-400 flex-shrink-0">{new Date(file.fecha).toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "2-digit" })}</span>
+                                                                                    {file.url && (
+                                                                                        <a href={file.url} target="_blank" rel="noopener noreferrer"
+                                                                                            className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold flex-shrink-0">
+                                                                                            <Download className="w-3 h-3" /> Descargar
+                                                                                        </a>
+                                                                                    )}
+                                                                                    {/* Action buttons */}
+                                                                                    <div className="flex gap-1 flex-shrink-0">
+                                                                                        {(isFinancialStatement || isBankStatement) && parsedData && (
+                                                                                            <button
+                                                                                                onClick={() => { setViewingFile(isViewing ? null : file.id); setEditingFile(null); setConfirmDeleteId(null); }}
+                                                                                                className={`text-xs px-2 py-0.5 rounded-lg font-semibold transition-all ${isViewing ? "bg-blue-100 text-blue-700" : "bg-gray-100 hover:bg-blue-50 text-gray-500 hover:text-blue-700"}`}>
+                                                                                                {isViewing ? "Ocultar" : "Ver datos"}
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <button
+                                                                                            onClick={() => { setEditingFile(isEditing && editingFile?.mode === "replace" ? null : { dbDocId: file.id, mode: "replace" }); setViewingFile(null); setConfirmDeleteId(null); }}
+                                                                                            className={`text-xs px-2 py-0.5 rounded-lg font-semibold transition-all ${isEditing && editingFile?.mode === "replace" ? "bg-amber-100 text-amber-700" : "bg-gray-100 hover:bg-amber-50 text-gray-500 hover:text-amber-700"}`}>
+                                                                                            Reemplazar
+                                                                                        </button>
+                                                                                        {(isFinancialStatement || isBankStatement) && parsedData && (
+                                                                                            <button
+                                                                                                onClick={() => {
+                                                                                                    if (isEditing && editingFile?.mode === "edit") { setEditingFile(null); return; }
+                                                                                                    const pd = parsedData?.periodData?.[0];
+                                                                                                    if (pd) {
+                                                                                                        const bg = pd.balanceGeneral; const er = pd.estadoResultados;
+                                                                                                        setEditValues({ ventas: er.ventas ?? "", costoVenta: er.costoVenta ?? "", utilidadNeta: er.utilidadNeta ?? "", activoTotal: bg.activoTotal ?? "", pasivoTotal: bg.pasivoTotal ?? "", capitalContable: bg.capitalContable ?? "" });
+                                                                                                    }
+                                                                                                    setEditingFile({ dbDocId: file.id, mode: "edit" }); setViewingFile(null); setConfirmDeleteId(null);
+                                                                                                }}
+                                                                                                className={`text-xs px-2 py-0.5 rounded-lg font-semibold transition-all ${isEditing && editingFile?.mode === "edit" ? "bg-purple-100 text-purple-700" : "bg-gray-100 hover:bg-purple-50 text-gray-500 hover:text-purple-700"}`}>
+                                                                                                Editar datos
+                                                                                            </button>
+                                                                                        )}
+                                                                                        <button
+                                                                                            onClick={() => { setConfirmDeleteId(isConfirmingDelete ? null : file.id); setEditingFile(null); setViewingFile(null); }}
+                                                                                            className={`text-xs px-2 py-0.5 rounded-lg font-semibold transition-all ${isConfirmingDelete ? "bg-red-100 text-red-700" : "bg-gray-100 hover:bg-red-50 text-gray-500 hover:text-red-600"}`}>
+                                                                                            Eliminar
+                                                                                        </button>
+                                                                                    </div>
+                                                                                </div>
 
-                                                        {/* Show OCR preview right after upload */}
-                                                        {isBankStatement && uploadedInfo && !entregado && (
-                                                            <div className="ml-8 mr-2 mt-2">
-                                                                <BankStatementPreview info={uploadedInfo} casoId={caso.id} />
+                                                                                {/* Confirm delete */}
+                                                                                {isConfirmingDelete && (
+                                                                                    <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border-t border-red-100">
+                                                                                        <span className="text-xs text-red-700 flex-1">¿Eliminar este archivo permanentemente?</span>
+                                                                                        <button
+                                                                                            onClick={async () => {
+                                                                                                const res = await fetch(`/api/expedientes/${caso.id}/documentos/${file.id}`, { method: "DELETE" });
+                                                                                                if (res.ok) { setDeletedIds(prev => new Set([...prev, file.id])); setConfirmDeleteId(null); showToast("Archivo eliminado"); refreshDocs(); }
+                                                                                                else showToast("Error al eliminar");
+                                                                                            }}
+                                                                                            className="text-xs px-2 py-1 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg">
+                                                                                            Sí, eliminar
+                                                                                        </button>
+                                                                                        <button onClick={() => setConfirmDeleteId(null)} className="text-xs px-2 py-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 font-semibold rounded-lg">
+                                                                                            Cancelar
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Replace upload zone */}
+                                                                                {isEditing && editingFile?.mode === "replace" && (
+                                                                                    <div className="p-2 border-t border-gray-100">
+                                                                                        <DocUploadPanel
+                                                                                            docId={doc.id} docNombre={doc.nombre} casoId={caso.id}
+                                                                                            onSuccess={info => {
+                                                                                                setUploaded(prev => ({ ...prev, [doc.id]: info }));
+                                                                                                setEditingFile(null);
+                                                                                                showToast("Archivo reemplazado");
+                                                                                                refreshDocs();
+                                                                                            }}
+                                                                                        />
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Edit data form */}
+                                                                                {isEditing && editingFile?.mode === "edit" && (
+                                                                                    <div className="p-3 border-t border-gray-100 space-y-2">
+                                                                                        <p className="text-xs font-bold text-gray-500">Editar datos extraídos (principales)</p>
+                                                                                        <div className="grid grid-cols-2 gap-2">
+                                                                                            {[
+                                                                                                { key: "ventas", label: "Ventas" },
+                                                                                                { key: "costoVenta", label: "Costo de Venta" },
+                                                                                                { key: "utilidadNeta", label: "Utilidad Neta" },
+                                                                                                { key: "activoTotal", label: "Activo Total" },
+                                                                                                { key: "pasivoTotal", label: "Pasivo Total" },
+                                                                                                { key: "capitalContable", label: "Capital Contable" },
+                                                                                            ].map(({ key, label }) => (
+                                                                                                <div key={key}>
+                                                                                                    <label className="text-xs text-gray-400 mb-0.5 block">{label}</label>
+                                                                                                    <input
+                                                                                                        type="number"
+                                                                                                        value={editValues[key] ?? ""}
+                                                                                                        onChange={e => setEditValues(v => ({ ...v, [key]: e.target.value }))}
+                                                                                                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                                                                                        placeholder="0"
+                                                                                                    />
+                                                                                                </div>
+                                                                                            ))}
+                                                                                        </div>
+                                                                                        <button
+                                                                                            disabled={editSaving}
+                                                                                            onClick={async () => {
+                                                                                                setEditSaving(true);
+                                                                                                try {
+                                                                                                    // Merge edited values into existing parsedData
+                                                                                                    const updated = JSON.parse(JSON.stringify(parsedData));
+                                                                                                    if (updated.periodData?.[0]) {
+                                                                                                        const pd = updated.periodData[0];
+                                                                                                        const n = (k: string) => editValues[k] !== "" ? Number(editValues[k]) : null;
+                                                                                                        pd.estadoResultados.ventas = n("ventas");
+                                                                                                        pd.estadoResultados.costoVenta = n("costoVenta");
+                                                                                                        pd.estadoResultados.utilidadNeta = n("utilidadNeta");
+                                                                                                        pd.balanceGeneral.activoTotal = n("activoTotal");
+                                                                                                        pd.balanceGeneral.pasivoTotal = n("pasivoTotal");
+                                                                                                        pd.balanceGeneral.capitalContable = n("capitalContable");
+                                                                                                    }
+                                                                                                    const res = await fetch(`/api/expedientes/${caso.id}/documentos/${file.id}`, {
+                                                                                                        method: "PATCH",
+                                                                                                        headers: { "Content-Type": "application/json" },
+                                                                                                        body: JSON.stringify({ datosExtraidos: updated }),
+                                                                                                    });
+                                                                                                    if (!res.ok) throw new Error("Error al guardar");
+                                                                                                    // Update session state too
+                                                                                                    setUploaded(prev => ({
+                                                                                                        ...prev,
+                                                                                                        [doc.id]: { ...prev[doc.id], financialData: updated, docDbId: file.id },
+                                                                                                    }));
+                                                                                                    setEditingFile(null);
+                                                                                                    showToast("Datos actualizados");
+                                                                                                } catch { showToast("Error al guardar datos"); }
+                                                                                                finally { setEditSaving(false); }
+                                                                                            }}
+                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50">
+                                                                                            {editSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                                                                                            Guardar cambios
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )}
+
+                                                                                {/* Financial / bank preview — toggled by "Ver datos" */}
+                                                                                {isViewing && isFinancialStatement && parsedData && (
+                                                                                    <div className="border-t border-gray-100">
+                                                                                        <FinancialStatementPreview info={{ ...uploadedInfo ?? { nombre: file.nombre, estatus: file.estatus }, financialData: parsedData }} />
+                                                                                    </div>
+                                                                                )}
+                                                                                {isViewing && isBankStatement && (sessionFile ?? null) && (
+                                                                                    <div className="border-t border-gray-100 p-2">
+                                                                                        <BankStatementPreview info={sessionFile!} casoId={caso.id} />
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+
+                                                            {/* ── Subir nuevo archivo ── */}
+                                                            <div>
+                                                                <div className="flex items-center gap-2 mb-1.5">
+                                                                    <div className="flex-1 h-px bg-gray-100" />
+                                                                    <span className="text-xs text-gray-400 font-medium flex-shrink-0">Subir nuevo archivo</span>
+                                                                    <div className="flex-1 h-px bg-gray-100" />
+                                                                </div>
+                                                                <DocUploadPanel
+                                                                    docId={doc.id} docNombre={doc.nombre} casoId={caso.id}
+                                                                    onSuccess={info => {
+                                                                        setUploaded(prev => ({ ...prev, [doc.id]: info }));
+                                                                        setEditingFile(null);
+                                                                        showToast("Documento guardado");
+                                                                        refreshDocs();
+                                                                        if (!isBankStatement && !isFinancialStatement) setSelectedDocId(null);
+                                                                    }}
+                                                                />
                                                             </div>
-                                                        )}
-                                                        {isFinancialStatement && uploadedInfo?.financialData && !entregado && (
-                                                            <div className="ml-8 mr-2 mt-2">
-                                                                <FinancialStatementPreview info={uploadedInfo} />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </li>
                                         );
                                     })}
@@ -865,143 +1129,484 @@ function TabDocumentos({ caso }: { caso: Case }) {
                 </div>
             </div>
         </div>
+
+        {/* Toast notification */}
+        {toast && (
+            <div className="fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                {toast}
+            </div>
+        )}
+        </>
     );
 }
+// ─── Datos Matriz de Riesgo (Evaluación de Crédito Pontifex) ─────────────────
+const MATRIX_SECTIONS = [
+    {
+        id: "conducta-admin", nombre: "Conducta y Administración", color: "blue",
+        factores: [
+            { id: "antiguedad", nombre: "Antigüedad de operación de la empresa", opciones: [
+                { id: "a1", valor: "Más de 5 años", puntos: 4 },
+                { id: "a2", valor: "2 a 5 años", puntos: 3 },
+                { id: "a3", valor: "1 a 2 años", puntos: 2 },
+                { id: "a4", valor: "Menos de 1 año", puntos: 1 },
+            ]},
+            { id: "tipo-admin", nombre: "Tipo de administración", opciones: [
+                { id: "b1", valor: "Profesional con experiencia", puntos: 5 },
+                { id: "b2", valor: "Familiar con experiencia", puntos: 4 },
+                { id: "b3", valor: "Profesional sin experiencia", puntos: 3 },
+                { id: "b4", valor: "Familiar sin experiencia", puntos: 2 },
+            ]},
+            { id: "quien-decide", nombre: "Quien administra y toma decisiones", opciones: [
+                { id: "c1", valor: "Gobierno Corporativo", puntos: 4 },
+                { id: "c2", valor: "Consejo de administración", puntos: 3 },
+                { id: "c3", valor: "Administrador único con asesoría", puntos: 2 },
+                { id: "c4", valor: "Centralizada en una sola persona", puntos: 1 },
+                { id: "c5", valor: "No se identifica quien toma las decisiones", puntos: 0 },
+            ]},
+            { id: "exp-admin", nombre: "Experiencia de los administradores", opciones: [
+                { id: "d1", valor: "Más de 5 años", puntos: 4 },
+                { id: "d2", valor: "2 a 5 años", puntos: 2 },
+                { id: "d3", valor: "1 a 2 años", puntos: 1 },
+                { id: "d4", valor: "Menos de 1 año", puntos: 0 },
+            ]},
+            { id: "tenencia", nombre: "Tenencia Accionaria", opciones: [
+                { id: "e1", valor: "Ningún Accionista tiene más del 50%", puntos: 4 },
+                { id: "e2", valor: "Un Accionista tiene más del 50% con consejeros independientes", puntos: 2 },
+                { id: "e3", valor: "Un Accionista tiene más del 50%", puntos: 0 },
+            ]},
+        ],
+    },
+    {
+        id: "mercado", nombre: "Mercado", color: "violet",
+        factores: [
+            { id: "sector-eco", nombre: "Sector Económico", opciones: [
+                { id: "f1", valor: "Industria", puntos: 3 },
+                { id: "f2", valor: "Comercio", puntos: 2 },
+                { id: "f3", valor: "Servicios", puntos: 1 },
+            ]},
+            { id: "posicionamiento", nombre: "Posicionamiento en el mercado", opciones: [
+                { id: "g1", valor: "Cuenta con presencia en todo el país", puntos: 4 },
+                { id: "g2", valor: "Cuenta con presencia regional", puntos: 3 },
+                { id: "g3", valor: "Cuenta con presencia local", puntos: 2 },
+                { id: "g4", valor: "Es un producto o servicio nuevo", puntos: 1 },
+            ]},
+            { id: "condiciones-mercado", nombre: "Condiciones de Mercado", opciones: [
+                { id: "h1", valor: "Excelente demanda de sus productos", puntos: 4 },
+                { id: "h2", valor: "Mercado dependiente de un Cliente o Proveedor", puntos: 3 },
+                { id: "h3", valor: "Escasez de materias primas", puntos: 2 },
+                { id: "h4", valor: "Poca demanda de sus productos", puntos: 2 },
+                { id: "h5", valor: "Caída de los precios de venta en el mercado", puntos: 1 },
+            ]},
+        ],
+    },
+    {
+        id: "conducta-crediticia", nombre: "Conducta Crediticia y Colateral", color: "amber",
+        factores: [
+            { id: "calidad-exp-acred", nombre: "Calidad de Experiencia Crediticia del Acreditado", opciones: [
+                { id: "i1", valor: "Buen historial", puntos: 4 },
+                { id: "i2", valor: "Con fallas", puntos: 1 },
+                { id: "i3", valor: "Rechazo", puntos: 0 },
+                { id: "i4", valor: "Sin historial", puntos: 2 },
+            ]},
+            { id: "score-acred", nombre: "Score de Experiencia Crediticia del Acreditado", opciones: [
+                { id: "j1", valor: "700 o más puntos", puntos: 4 },
+                { id: "j2", valor: "580 a 699 puntos", puntos: 3 },
+                { id: "j3", valor: "500 a 579 puntos", puntos: 1 },
+                { id: "j4", valor: "0 a 499 puntos", puntos: 0 },
+            ]},
+            { id: "calidad-exp-avales", nombre: "Calidad de Experiencia Crediticia de Avales y/o Deudores Solidarios", opciones: [
+                { id: "k1", valor: "Buen historial", puntos: 4 },
+                { id: "k2", valor: "Con fallas", puntos: 1 },
+                { id: "k3", valor: "Rechazo", puntos: 0 },
+                { id: "k4", valor: "Sin historial", puntos: 2 },
+            ]},
+            { id: "score-avales", nombre: "Score de Experiencia Crediticia de Avales y/o Deudores Solidarios", opciones: [
+                { id: "l1", valor: "700 o más puntos", puntos: 4 },
+                { id: "l2", valor: "580 a 699 puntos", puntos: 3 },
+                { id: "l3", valor: "500 a 579 puntos", puntos: 1 },
+                { id: "l4", valor: "0 a 499 puntos", puntos: 0 },
+            ]},
+            { id: "domicilios-buro", nombre: "Domicilios registrados en el Buró en 1 año", opciones: [
+                { id: "m1", valor: "1 domicilio", puntos: 4 },
+                { id: "m2", valor: "2 ó 3 domicilios", puntos: 3 },
+                { id: "m3", valor: "4 o más domicilios", puntos: 1 },
+            ]},
+            { id: "exp-empresa", nombre: "Experiencia Crediticia con la empresa", opciones: [
+                { id: "n1", valor: "Bueno", puntos: 5 },
+                { id: "n2", valor: "Regular", puntos: 3 },
+                { id: "n3", valor: "Sin historial previo", puntos: 2 },
+                { id: "n4", valor: "Malo", puntos: 0 },
+            ]},
+            { id: "referencias", nombre: "Referencias", opciones: [
+                { id: "o1", valor: "Buenas", puntos: 5 },
+                { id: "o2", valor: "Regulares", puntos: 3 },
+                { id: "o3", valor: "Sin Antecedentes", puntos: 2 },
+                { id: "o4", valor: "Malas", puntos: 0 },
+            ]},
+        ],
+    },
+    {
+        id: "estructura-credito", nombre: "Estructura del Crédito", color: "emerald",
+        factores: [
+            { id: "destino", nombre: "Destino del crédito", opciones: [
+                { id: "p1", valor: "Capital de trabajo", puntos: 5 },
+                { id: "p2", valor: "Activos Fijos", puntos: 4 },
+                { id: "p3", valor: "Automotriz", puntos: 3 },
+                { id: "p4", valor: "ABCD", puntos: 2 },
+                { id: "p5", valor: "Personal", puntos: 1 },
+            ]},
+            { id: "plazo", nombre: "Plazo", opciones: [
+                { id: "q1", valor: "Menos de 12 meses", puntos: 5 },
+                { id: "q2", valor: "12 a 36 meses", puntos: 4 },
+                { id: "q3", valor: "36 a 48 meses", puntos: 3 },
+                { id: "q4", valor: "48 a 60 meses", puntos: 2 },
+                { id: "q5", valor: "Más de 60 meses", puntos: 1 },
+            ]},
+            { id: "garantias", nombre: "Garantías", opciones: [
+                { id: "r1", valor: "Fiduciaria", puntos: 5 },
+                { id: "r2", valor: "Líquida", puntos: 4 },
+                { id: "r3", valor: "Hipotecaria", puntos: 3 },
+                { id: "r4", valor: "Prendaria", puntos: 3 },
+                { id: "r5", valor: "Aval", puntos: 2 },
+                { id: "r6", valor: "Sin garantía", puntos: 1 },
+            ]},
+            { id: "suficiencia-garantias", nombre: "Suficiencia de Garantías", opciones: [
+                { id: "s1", valor: "Aceptable", puntos: 5 },
+                { id: "s2", valor: "Regular", puntos: 3 },
+                { id: "s3", valor: "Malo", puntos: 0 },
+            ]},
+            { id: "situacion-avales", nombre: "Situación de Avales", opciones: [
+                { id: "t1", valor: "Excelente", puntos: 5 },
+                { id: "t2", valor: "Buenas", puntos: 3 },
+                { id: "t3", valor: "Mala", puntos: 0 },
+            ]},
+        ],
+    },
+    {
+        id: "capacidad-pago", nombre: "Capacidad de Pago", color: "indigo",
+        factores: [
+            { id: "cubre-120", nombre: "Cubre el Crédito al 120% — (Ingresos − Egresos) / (Total Adeudos + Intereses)", opciones: [
+                { id: "u1", valor: "Mayor a 200", puntos: 5 },
+                { id: "u2", valor: "120 a 200", puntos: 4 },
+                { id: "u3", valor: "Menor a 120", puntos: 1 },
+            ]},
+            { id: "endeud-sin", nombre: "Grado de endeudamiento sin préstamo (%)", opciones: [
+                { id: "v1", valor: "0 a 25%", puntos: 5 },
+                { id: "v2", valor: "26 a 50%", puntos: 3 },
+                { id: "v3", valor: "51 a 75%", puntos: 2 },
+                { id: "v4", valor: "76 a 100%", puntos: 1 },
+                { id: "v5", valor: "Mayor a 100%", puntos: 0 },
+            ]},
+            { id: "endeud-con", nombre: "Grado de endeudamiento con préstamo (%)", opciones: [
+                { id: "w1", valor: "0 a 25%", puntos: 5 },
+                { id: "w2", valor: "26 a 50%", puntos: 4 },
+                { id: "w3", valor: "51 a 75%", puntos: 3 },
+                { id: "w4", valor: "76 a 100%", puntos: 1 },
+                { id: "w5", valor: "Mayor a 100%", puntos: 0 },
+            ]},
+        ],
+    },
+    {
+        id: "indicadores-fin", nombre: "Indicadores Financieros", color: "purple",
+        factores: [
+            { id: "razon-circ", nombre: "Razón Circulante (Pasivo Circ. / Activo Circ.)", opciones: [
+                { id: "x1", valor: "Buena", puntos: 4 },
+                { id: "x2", valor: "Débil", puntos: 2 },
+                { id: "x3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "prueba-acido", nombre: "Prueba del Ácido (Activo Circ. − Invent. / Pasivo Circ.)", opciones: [
+                { id: "y1", valor: "Buena", puntos: 4 },
+                { id: "y2", valor: "Débil", puntos: 2 },
+                { id: "y3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "cobertura-deuda", nombre: "Cobertura de deuda (EBITDA / Gastos Financieros)", opciones: [
+                { id: "z1", valor: "Buena", puntos: 4 },
+                { id: "z2", valor: "Débil", puntos: 2 },
+                { id: "z3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "autosuficiencia", nombre: "Autosuficiencia Operativa", opciones: [
+                { id: "aa1", valor: "Buena", puntos: 5 },
+                { id: "aa2", valor: "Débil", puntos: 3 },
+                { id: "aa3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "apalancamiento", nombre: "Apalancamiento (Pasivo Total / Capital Contable)", opciones: [
+                { id: "ab1", valor: "Buena", puntos: 5 },
+                { id: "ab2", valor: "Débil", puntos: 3 },
+                { id: "ab3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "roa", nombre: "ROA", opciones: [
+                { id: "ac1", valor: "Buena", puntos: 5 },
+                { id: "ac2", valor: "Débil", puntos: 3 },
+                { id: "ac3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "roe", nombre: "ROE", opciones: [
+                { id: "ad1", valor: "Buena", puntos: 5 },
+                { id: "ad2", valor: "Débil", puntos: 3 },
+                { id: "ad3", valor: "Mala", puntos: 0 },
+            ]},
+        ],
+    },
+    {
+        id: "infraestructura", nombre: "Infraestructura", color: "rose",
+        factores: [
+            { id: "estructura-org", nombre: "Estructura Organizacional", opciones: [
+                { id: "ae1", valor: "Satisfactoria", puntos: 4 },
+                { id: "ae2", valor: "Regular", puntos: 2 },
+                { id: "ae3", valor: "Insuficiente o deficiente", puntos: 0 },
+            ]},
+            { id: "competencia-admin", nombre: "Competencia de la Administración", opciones: [
+                { id: "af1", valor: "Buena", puntos: 4 },
+                { id: "af2", valor: "Regular", puntos: 2 },
+                { id: "af3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "manuales", nombre: "Manuales de Políticas y Procedimientos", opciones: [
+                { id: "ag1", valor: "De todos sus procesos actualizados", puntos: 4 },
+                { id: "ag2", valor: "De todos sus procesos desactualizados", puntos: 3 },
+                { id: "ag3", valor: "De algunos procesos actualizados", puntos: 2 },
+                { id: "ag4", valor: "De algunos procesos desactualizados", puntos: 1 },
+                { id: "ag5", valor: "No existen", puntos: 0 },
+            ]},
+            { id: "tecnologia", nombre: "Infraestructura Tecnológica", opciones: [
+                { id: "ah1", valor: "Suficiente con medidas de seguridad adecuadas", puntos: 4 },
+                { id: "ah2", valor: "Suficiente con medidas de seguridad inadecuadas", puntos: 2 },
+                { id: "ah3", valor: "Insuficiente con medidas de seguridad deficientes", puntos: 0 },
+            ]},
+        ],
+    },
+] as const;
+
+type Selecciones = Record<string, string>;
+
 // ─── Tab: Análisis ────────────────────────────────────────────────────────────
 function TabAnalisis({ caso }: { caso: Case }) {
-    const [showTxt, setShowTxt] = useState(false);
-    const [año, setAño] = useState(2025);
-    const [mes, setMes] = useState("Enero");
-    const [excelStatus, setExcelStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
-    const [excelResult, setExcelResult] = useState<any>(null);
-    const [excelError, setExcelError] = useState("");
+    const [selecciones, setSelecciones] = useState<Selecciones>(() => {
+        try { return JSON.parse(caso.matrizRiesgo ?? "{}"); }
+        catch { return {}; }
+    });
+    const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+    const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
-    const df = caso.datosFinancieros;
-
-    const handleExcel = async () => {
-        if (!df) return;
-        setExcelStatus("loading"); setExcelError("");
-        try {
-            const res = await fetch("/api/generate-excel", {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ caseId: caso.id, año, mes, saldoAnterior: df.ingresos, saldoFinal: df.egresos }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Error");
-            setExcelResult(data); setExcelStatus("done");
-        } catch (err: any) { setExcelError(err.message); setExcelStatus("error"); }
+    const handleSelect = (factorId: string, opcionId: string) => {
+        const next: Selecciones = { ...selecciones };
+        if (next[factorId] === opcionId) {
+            delete next[factorId]; // deselect
+        } else {
+            next[factorId] = opcionId;
+        }
+        setSelecciones(next);
+        setSaveStatus("saving");
+        if (saveTimer) clearTimeout(saveTimer);
+        const t = setTimeout(async () => {
+            try {
+                await fetch(`/api/expedientes/${caso.id}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ matrizRiesgo: JSON.stringify(next) }),
+                });
+                setSaveStatus("saved");
+                setTimeout(() => setSaveStatus("idle"), 2000);
+            } catch { setSaveStatus("idle"); }
+        }, 800);
+        setSaveTimer(t);
     };
 
-    if (!df) {
-        return (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 flex flex-col items-center justify-center text-center">
-                <BarChart2 className="w-10 h-10 text-gray-200 mb-3" />
-                <p className="text-gray-500 font-medium">Sin datos de análisis disponibles</p>
-                <p className="text-gray-400 text-sm mt-1">Za procesado el OCR para comenzar el análisis.</p>
-            </div>
-        );
-    }
+    // Score calculation
+    const sectionScores = MATRIX_SECTIONS.map(section => {
+        const pts = section.factores.reduce((sum, factor) => {
+            const selId = selecciones[factor.id];
+            const op = selId ? (factor.opciones as readonly { id: string; valor: string; puntos: number }[]).find(o => o.id === selId) : undefined;
+            return sum + (op?.puntos ?? 0);
+        }, 0);
+        const maxPts = section.factores.reduce((sum, factor) => {
+            return sum + Math.max(...(factor.opciones as readonly { id: string; valor: string; puntos: number }[]).map(o => o.puntos));
+        }, 0);
+        return { id: section.id, pts, maxPts };
+    });
+
+    const totalPuntos = sectionScores.reduce((s, x) => s + x.pts, 0);
+    const maxPuntos = sectionScores.reduce((s, x) => s + x.maxPts, 0);
+    const totalFactores = MATRIX_SECTIONS.reduce((s, sec) => s + sec.factores.length, 0);
+    const seleccionados = Object.keys(selecciones).length;
+    const pctAvance = Math.round((seleccionados / totalFactores) * 100);
+    const resolucion = totalPuntos >= 120 ? "Aprobado" : totalPuntos >= 75 ? "Dudoso" : "Rechazado";
+
+    const sectionColors: Record<string, { header: string; badge: string; row: string; dot: string }> = {
+        blue:    { header: "from-blue-700 to-blue-500",     badge: "bg-white/20 text-white", row: "hover:bg-blue-50",    dot: "bg-blue-500" },
+        violet:  { header: "from-violet-700 to-violet-500", badge: "bg-white/20 text-white", row: "hover:bg-violet-50",  dot: "bg-violet-500" },
+        amber:   { header: "from-amber-600 to-amber-400",   badge: "bg-white/20 text-white", row: "hover:bg-amber-50",   dot: "bg-amber-500" },
+        emerald: { header: "from-emerald-700 to-emerald-500",badge: "bg-white/20 text-white", row: "hover:bg-emerald-50", dot: "bg-emerald-500" },
+        indigo:  { header: "from-indigo-700 to-indigo-500", badge: "bg-white/20 text-white", row: "hover:bg-indigo-50",  dot: "bg-indigo-500" },
+        purple:  { header: "from-purple-700 to-purple-500", badge: "bg-white/20 text-white", row: "hover:bg-purple-50",  dot: "bg-purple-500" },
+        rose:    { header: "from-rose-700 to-rose-500",     badge: "bg-white/20 text-white", row: "hover:bg-rose-50",    dot: "bg-rose-500" },
+    };
 
     return (
-        <div className="space-y-5">
-            {/* Data cards — Ingresos y Egresos */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {[
-                    { label: "Ingresos (Depósitos)", value: df.ingresos, color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100" },
-                    { label: "Egresos (Retiros)", value: df.egresos, color: "text-red-600", bg: "bg-red-50", border: "border-red-100" },
-                ].map(({ label, value, color, bg, border }) => (
-                    <div key={label} className={`${bg} border ${border} rounded-2xl p-5`}>
-                        <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-2">{label}</p>
-                        <p className={`text-2xl font-extrabold ${color}`}>
-                            {value && value !== "No detectado" ? `$${value}` : <span className="text-gray-400 font-normal text-base">No detectado</span>}
+        <div className="space-y-4">
+            {/* ── Encabezado con puntuación total ── */}
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-start justify-between flex-wrap gap-4">
+                    <div>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Evaluación de Crédito — Personas Morales</p>
+                        <h2 className="text-2xl font-extrabold text-gray-900">{totalPuntos} <span className="text-sm font-semibold text-gray-400">/ {maxPuntos} pts</span></h2>
+                        <p className="text-xs text-gray-400 mt-1">{seleccionados} de {totalFactores} factores evaluados</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                        <span className={`px-4 py-1.5 rounded-full text-sm font-bold ${
+                            resolucion === "Aprobado" ? "bg-emerald-100 text-emerald-700" :
+                            resolucion === "Dudoso"   ? "bg-amber-100 text-amber-700" :
+                                                        "bg-red-100 text-red-700"
+                        }`}>{resolucion === "Aprobado" ? "✓ " : resolucion === "Dudoso" ? "⚠ " : "✕ "}{resolucion}</span>
+                        {saveStatus === "saving" && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Guardando…</span>}
+                        {saveStatus === "saved"  && <span className="text-xs text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Guardado</span>}
+                    </div>
+                </div>
+
+                {/* Barra de puntuación total */}
+                <div className="mt-4">
+                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
+                        {/* Zone markers */}
+                        <div className="absolute top-0 bottom-0 bg-red-200/60"    style={{ left: 0, width: `${(75/maxPuntos)*100}%` }} />
+                        <div className="absolute top-0 bottom-0 bg-amber-200/60"  style={{ left: `${(75/maxPuntos)*100}%`, width: `${((120-75)/maxPuntos)*100}%` }} />
+                        <div className="absolute top-0 bottom-0 bg-emerald-200/60" style={{ left: `${(120/maxPuntos)*100}%`, right: 0 }} />
+                        <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-500 ${
+                            totalPuntos >= 120 ? "bg-emerald-500" : totalPuntos >= 75 ? "bg-amber-500" : "bg-red-500"
+                        }`} style={{ width: `${Math.min((totalPuntos/maxPuntos)*100, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between mt-1 text-xs text-gray-400">
+                        <span>0</span>
+                        <span className="text-red-400">Rechazado &lt;75</span>
+                        <span className="text-amber-500">Dudoso 75–119</span>
+                        <span className="text-emerald-500">Aprobado ≥120</span>
+                        <span>{maxPuntos}</span>
+                    </div>
+                </div>
+
+                {/* Resumen por sección */}
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
+                    {sectionScores.map((sc, i) => {
+                        const sec = MATRIX_SECTIONS[i];
+                        const pct = sc.maxPts > 0 ? Math.round((sc.pts / sc.maxPts) * 100) : 0;
+                        const clr = sectionColors[sec.color as string];
+                        return (
+                            <div key={sc.id} className="bg-gray-50 rounded-xl p-2.5">
+                                <div className="flex items-center gap-1.5 mb-1.5">
+                                    <div className={`w-1.5 h-1.5 rounded-full ${clr.dot}`} />
+                                    <p className="text-xs text-gray-500 font-semibold truncate">{sec.nombre}</p>
+                                </div>
+                                <p className="text-sm font-extrabold text-gray-800">{sc.pts}<span className="text-xs font-normal text-gray-400">/{sc.maxPts}</span></p>
+                                <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                                    <div className={`h-1 rounded-full ${clr.dot} opacity-80`} style={{ width: `${pct}%` }} />
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* ── Secciones de la matriz ── */}
+            {MATRIX_SECTIONS.map(section => {
+                const clr = sectionColors[section.color as string];
+                const secScore = sectionScores.find(s => s.id === section.id)!;
+                const completados = section.factores.filter(f => selecciones[f.id]).length;
+                return (
+                    <div key={section.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                        {/* Header */}
+                        <div className={`px-5 py-3 bg-gradient-to-r ${clr.header} flex items-center gap-3`}>
+                            <span className="text-sm font-bold text-white flex-1">{section.nombre}</span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${clr.badge}`}>{completados}/{section.factores.length} factores</span>
+                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-white/25 text-white`}>{secScore.pts} pts</span>
+                        </div>
+
+                        {/* Factores */}
+                        <div className="divide-y divide-gray-50">
+                            {section.factores.map(factor => {
+                                const selectedId = selecciones[factor.id];
+                                const selectedOp = selectedId
+                                    ? (factor.opciones as readonly { id: string; valor: string; puntos: number }[]).find(o => o.id === selectedId)
+                                    : undefined;
+                                return (
+                                    <div key={factor.id} className="px-4 py-3">
+                                        {/* Factor label + earned points */}
+                                        <div className="flex items-center justify-between mb-2">
+                                            <p className="text-xs font-semibold text-gray-700">{factor.nombre}</p>
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${
+                                                selectedOp ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+                                            }`}>
+                                                {selectedOp ? `${selectedOp.puntos} pts` : "—"}
+                                            </span>
+                                        </div>
+                                        {/* Options grid */}
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                            {(factor.opciones as readonly { id: string; valor: string; puntos: number }[]).map(op => {
+                                                const isSelected = selectedId === op.id;
+                                                return (
+                                                    <button
+                                                        key={op.id}
+                                                        onClick={() => handleSelect(factor.id, op.id)}
+                                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs transition-all border ${
+                                                            isSelected
+                                                                ? "bg-blue-50 border-blue-300 text-blue-800 font-semibold"
+                                                                : `bg-gray-50 border-gray-100 text-gray-600 ${clr.row} hover:border-gray-200`
+                                                        }`}
+                                                    >
+                                                        <span className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold ${
+                                                            isSelected ? "border-blue-500 bg-blue-500 text-white" : "border-gray-300 bg-white text-transparent"
+                                                        }`}>✕</span>
+                                                        <span className="flex-1 leading-tight">{op.valor}</span>
+                                                        <span className={`flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ${
+                                                            isSelected ? "bg-blue-200 text-blue-700" : "bg-gray-200 text-gray-500"
+                                                        }`}>{op.puntos}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+
+            {/* ── Resolución final ── */}
+            <div className={`rounded-2xl border p-6 ${
+                resolucion === "Aprobado" ? "bg-emerald-50 border-emerald-200" :
+                resolucion === "Dudoso"   ? "bg-amber-50 border-amber-200" :
+                                            "bg-red-50 border-red-200"
+            }`}>
+                <div className="flex items-center gap-4 flex-wrap">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${
+                        resolucion === "Aprobado" ? "bg-emerald-100" :
+                        resolucion === "Dudoso"   ? "bg-amber-100" : "bg-red-100"
+                    }`}>
+                        {resolucion === "Aprobado" ? "✓" : resolucion === "Dudoso" ? "⚠" : "✕"}
+                    </div>
+                    <div className="flex-1">
+                        <p className={`text-lg font-extrabold ${
+                            resolucion === "Aprobado" ? "text-emerald-800" :
+                            resolucion === "Dudoso"   ? "text-amber-800" : "text-red-800"
+                        }`}>Resolución: {resolucion}</p>
+                        <p className={`text-sm mt-0.5 ${
+                            resolucion === "Aprobado" ? "text-emerald-700" :
+                            resolucion === "Dudoso"   ? "text-amber-700" : "text-red-700"
+                        }`}>
+                            {resolucion === "Aprobado" && "Ponderación igual o mayor a 120 puntos. El expediente cumple los criterios para aprobación."}
+                            {resolucion === "Dudoso"   && "Ponderación entre 75 y 119 puntos. Requiere dictamen con razonamiento adicional para el Comité de Crédito."}
+                            {resolucion === "Rechazado" && "Ponderación menor a 75 puntos. El expediente no cumple los criterios mínimos de aprobación."}
                         </p>
                     </div>
-                ))}
-            </div>
-
-            {/* Meta info */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-4">Información del periodo analizado</p>
-                <div className="grid grid-cols-3 gap-4">
-                    {[
-                        { l: "Período detectado", v: df.periodo },
-                        { l: "Movimientos", v: `${df.movimientos} transacciones` },
-                        { l: "Estatus de validación", v: caso.situacion },
-                    ].map(({ l, v }) => (
-                        <div key={l}>
-                            <p className="text-xs text-gray-400">{l}</p>
-                            <p className="text-sm font-semibold text-gray-800">{v}</p>
-                        </div>
-                    ))}
+                    <div className="text-right">
+                        <p className={`text-3xl font-black ${
+                            resolucion === "Aprobado" ? "text-emerald-700" :
+                            resolucion === "Dudoso"   ? "text-amber-700" : "text-red-700"
+                        }`}>{totalPuntos}</p>
+                        <p className="text-xs text-gray-500">de {maxPuntos} puntos posibles</p>
+                        {seleccionados < totalFactores && (
+                            <p className="text-xs text-gray-400 mt-1">({totalFactores - seleccionados} factores sin evaluar)</p>
+                        )}
+                    </div>
                 </div>
-            </div>
-
-            {/* Excel export */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <p className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-                    <Table2 className="w-4 h-4 text-green-600" />Exportar a Excel (CUENTAS.xlsx)
-                </p>
-                <div className="flex flex-wrap gap-3 items-end">
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Año</label>
-                        <select value={año} onChange={e => setAño(Number(e.target.value))}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
-                            {AÑOS.map(y => <option key={y}>{y}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Mes</label>
-                        <select value={mes} onChange={e => setMes(e.target.value)}
-                            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-green-500">
-                            {MESES.map(m => <option key={m}>{m}</option>)}
-                        </select>
-                    </div>
-                    <button onClick={handleExcel} disabled={excelStatus === "loading"}
-                        className="flex items-center gap-2 py-2 px-4 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-all">
-                        {excelStatus === "loading" ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Generando…</> : <><Table2 className="w-3.5 h-3.5" />Generar Excel</>}
-                    </button>
-                </div>
-                {excelStatus === "error" && (
-                    <p className="mt-3 text-xs text-red-600 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{excelError}</p>
-                )}
-                {excelStatus === "done" && excelResult && (
-                    <div className="mt-4 bg-green-50 border border-green-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-3">
-                        <div className="flex items-center gap-2 text-green-700 text-sm font-semibold">
-                            <CheckCircle2 className="w-4 h-4" />Excel generado correctamente
-                        </div>
-                        <button onClick={() => window.location.href = `/api/generate-excel?file=${encodeURIComponent(excelResult.filename)}`}
-                            className="flex items-center gap-2 py-1.5 px-4 rounded-lg text-sm font-semibold text-white bg-green-600 hover:bg-green-700 transition-all">
-                            <Download className="w-3.5 h-3.5" />Descargar
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* Collapsible raw TXT */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <button onClick={() => setShowTxt(!showTxt)}
-                    className="w-full flex items-center justify-between px-5 py-4 text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors">
-                    <span className="flex items-center gap-2"><Info className="w-4 h-4" />Ver salida técnica (TXT crudo del OCR)</span>
-                    {showTxt ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-                {showTxt && (
-                    <div className="px-5 pb-5">
-                        <pre className="text-xs text-gray-500 bg-gray-50 rounded-lg p-4 overflow-auto max-h-48 font-mono leading-relaxed">
-                            {`--- Reporte OCR generado por Nexus Pontifex ---
-Caso: ${caso.id}
-Cliente: ${caso.cliente}
-Período: ${df.periodo}
-
-Saldo Anterior: $${df.saldoAnterior}
-Saldo Final: $${df.saldoFinal}
-Ingresos Totales: $${df.ingresos}
-Egresos Totales: $${df.egresos}
-Total movimientos: ${df.movimientos}
-
---- Fin del reporte ---`}
-                        </pre>
-                    </div>
-                )}
             </div>
         </div>
     );

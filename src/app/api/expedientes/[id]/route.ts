@@ -53,7 +53,7 @@ export async function PATCH(
         const allowedFields = [
             "etapa", "etapaNombre", "situacion", "observaciones",
             "rfc", "email", "telefono", "contacto", "montoSolicitado",
-            "tipoFinanciamiento", "sector",
+            "tipoFinanciamiento", "sector", "matrizRiesgo",
         ];
         const updateData: Record<string, any> = {};
         for (const key of allowedFields) {

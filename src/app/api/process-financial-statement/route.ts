@@ -18,7 +18,20 @@ export async function POST(request: Request) {
 
         const buffer = Buffer.from(await file.arrayBuffer());
         const text = await extractTextFromFinancialPDF(buffer);
+
+        // ── DEBUG: imprime el texto crudo para diagnosticar el formato del PDF ──
+        console.log("=== RAW PDF TEXT (primeras 3000 chars) ===");
+        console.log(text.substring(0, 3000));
+        console.log("=== FIN RAW TEXT ===");
+
         const result = parseFinancialStatement(text);
+
+        // ── DEBUG: imprime los valores parseados ──
+        console.log("=== PARSED FIELDS ===");
+        console.log("Balance General:", JSON.stringify(result.balanceGeneral, null, 2));
+        console.log("Estado Resultados:", JSON.stringify(result.estadoResultados, null, 2));
+        console.log("Periodos:", result.periodos);
+        console.log("=== FIN PARSED ===");
 
         return NextResponse.json({ success: true, data: result });
 

@@ -22,6 +22,7 @@ export async function POST(
         let estatus = "Entregado";
         let fileUrl: string | undefined;
         let fileSize: number | undefined;
+        let datosExtraidos: string | undefined;
 
         if (contentType.includes("multipart/form-data")) {
             const formData = await request.formData();
@@ -29,6 +30,7 @@ export async function POST(
             tipo = formData.get("docId") as string ?? formData.get("tipo") as string ?? "";
             nombre = (formData.get("nombre") as string) ?? (file?.name ?? "");
             estatus = (formData.get("estatus") as string) ?? "Entregado";
+            datosExtraidos = (formData.get("datosExtraidos") as string) ?? undefined;
 
             if (!tipo || !nombre) {
                 return NextResponse.json(
@@ -73,6 +75,7 @@ export async function POST(
                 estatus,
                 ...(fileUrl && { url: fileUrl }),
                 ...(fileSize !== undefined && { size: fileSize }),
+                ...(datosExtraidos && { datosExtraidos }),
             },
         });
 

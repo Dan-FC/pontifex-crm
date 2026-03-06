@@ -43,9 +43,7 @@ export const CATEGORIAS_DOCUMENTOS: CategoriaDocumentos[] = [
         nombre: "Financiera",
         descripcion: "Estados Financieros (Estado de Resultados, Balance General, Relaciones Analíticas)",
         documentos: [
-            { id: "estados-fin-2019", nombre: "Estados Financieros 2019", categoria: "Financiera", obligatorio: true },
-            { id: "estados-fin-2020", nombre: "Estados Financieros 2020", categoria: "Financiera", obligatorio: true },
-            { id: "estado-fin-parcial", nombre: "Estado Financiero Parcial 2021", categoria: "Financiera", obligatorio: true },
+            { id: "estados-financieros", nombre: "Estados Financieros", categoria: "Financiera", obligatorio: true },
             { id: "estados-cuenta-banco", nombre: "Estados de cuenta bancarios (últimos 12 meses)", categoria: "Financiera", obligatorio: true },
             { id: "proyecciones-proyecto", nombre: "Proyecciones Financieras del proyecto", categoria: "Financiera", obligatorio: true },
         ],

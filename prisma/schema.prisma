@@ -28,6 +28,7 @@ model Expediente {
   completitud         Int      @default(0)
   observaciones       String   @default("")
   alertas             String   @default("[]")
+  matrizRiesgo        String   @default("{}")
   fechaAlta           DateTime @default(now())
   ultimaActualizacion DateTime @updatedAt
 
@@ -48,8 +49,9 @@ model Documento {
   movimientos  Int      @default(0)
   rawTxt       String?
   archivoPath  String?
-  url          String?  // URL pública de Supabase Storage
-  size         Int?     // Tamaño del archivo en bytes
+  url            String?  // URL pública de Supabase Storage
+  size           Int?     // Tamaño del archivo en bytes
+  datosExtraidos String?  // JSON – ParsedFinancialStatement o datos OCR
 
   expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
 }
