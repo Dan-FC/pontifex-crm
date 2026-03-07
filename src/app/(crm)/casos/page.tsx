@@ -284,31 +284,6 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
                 )}
             </div>
 
-            {/* Alertas */}
-            {(() => {
-                let alertasList: string[] = [];
-                try { alertasList = Array.isArray(caso.alertas) ? caso.alertas : JSON.parse(caso.alertas || "[]"); }
-                catch { alertasList = []; }
-                return alertasList.length > 0 ? (
-                    <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5">
-                        <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide mb-3 flex items-center gap-1.5">
-                            <AlertTriangle className="w-3.5 h-3.5" />Alertas ({alertasList.length})
-                        </p>
-                        <ul className="space-y-2">
-                            {alertasList.map((a: string, i: number) => (
-                                <li key={i} className="text-sm text-amber-700 flex items-start gap-2">
-                                    <span className="text-amber-400 mt-0.5 flex-shrink-0">•</span>{a}
-                                </li>
-                            ))}
-                        </ul>
-                    </div>
-                ) : (
-                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-5 flex items-center gap-3">
-                        <CheckCircle2 className="w-6 h-6 text-emerald-500 flex-shrink-0" />
-                        <p className="text-sm text-emerald-700 font-medium">Sin alertas ni inconsistencias detectadas.</p>
-                    </div>
-                );
-            })()}
         </div>
     );
 }
@@ -561,99 +536,130 @@ function BankStatementPreview({ info, casoId }: { info: UploadedDocInfo; casoId:
 }
 
 // ─── FinancialStatementPreview ────────────────────────────────────────────────
-function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
+const BG_EDITABLE_FIELDS = ["activoCirculante","inventarios","clientes","deudoresDiversos","activoFijo","terrenosEdificios","maquinariaEquipo","equipoTransporte","otrosActivos","activoTotal","pasivoCirculante","proveedores","acreedoresDiversos","docsPagarCP","pasivoLargoPlazo","docsPagarLP","otrosPasivos","pasivoTotal","capitalSocial","utilidadesAnteriores","capitalContable"];
+const ER_EDITABLE_FIELDS = ["ventas","costoVenta","utilidadBruta","gastosOperacion","gastosFinancieros","utilidadAntesImpuestos","impuestos","utilidadNeta"];
+
+function FinancialStatementPreview({
+    info,
+    editMode = false,
+    onEditSave,
+}: {
+    info: UploadedDocInfo;
+    editMode?: boolean;
+    onEditSave?: (updated: any) => void;
+}) {
     const d = info.financialData;
     if (!d) return null;
 
     const [activePeriod, setActivePeriod] = useState(0);
     const [showRaw, setShowRaw] = useState(false);
+    const [saving, setSaving] = useState(false);
 
     const periodData: any[] = d.periodData ?? [];
     const periodos: string[] = d.periodos ?? [];
+    const current = periodData[activePeriod] ?? { balanceGeneral: d.balanceGeneral, estadoResultados: d.estadoResultados };
+    const bg = current.balanceGeneral ?? {};
+    const er = current.estadoResultados ?? {};
 
-    // Active period data (fallback to top-level for older responses)
-    const current = periodData[activePeriod] ?? { balanceGeneral: d.balanceGeneral, estadoResultados: d.estadoResultados, kpis: d.kpis };
-    const bg = current.balanceGeneral;
-    const er = current.estadoResultados;
-    const kp = current.kpis;
+    const buildEditVals = (bgObj: any, erObj: any) => {
+        const vals: Record<string, string> = {};
+        for (const f of BG_EDITABLE_FIELDS) vals[`bg.${f}`] = bgObj?.[f] != null ? String(Math.round(bgObj[f])) : "";
+        for (const f of ER_EDITABLE_FIELDS) vals[`er.${f}`] = erObj?.[f] != null ? String(Math.round(erObj[f])) : "";
+        return vals;
+    };
+    const [editVals, setEditVals] = useState<Record<string, string>>(() => buildEditVals(bg, er));
+    useEffect(() => { if (editMode) setEditVals(buildEditVals(bg, er)); }, [activePeriod, editMode]);
 
-    const fmt = (v: number | null) =>
-        v !== null ? `$${Math.round(v).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>;
-    const fmtSub = (v: number | null): string | null =>
-        v !== null ? `$${Math.round(v).toLocaleString("es-MX", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : null;
-    const fmtPct = (v: number | null) =>
-        v !== null ? `${(v * 100).toFixed(1)}%` : <span className="text-gray-300">—</span>;
-    const fmtX = (v: number | null) =>
-        v !== null ? `${v.toFixed(2)}x` : <span className="text-gray-300">—</span>;
-    const fmtDias = (v: number | null) =>
-        v !== null ? `${Math.round(v)} días` : <span className="text-gray-300">—</span>;
+    const ev = (key: string) => editVals[key] ?? "";
+    const setev = (key: string, val: string) => setEditVals(prev => ({ ...prev, [key]: val }));
+    const parseN = (v: string) => v.trim() === "" ? null : Number(v);
+    const money = (v: number | null | undefined) =>
+        v != null ? `$${Math.round(v).toLocaleString("es-MX")}` : null;
 
-    const Row = ({ label, value, indent }: { label: string; value: React.ReactNode; indent?: boolean }) => (
-        <div className={`flex justify-between items-center py-1.5 hover:bg-gray-50/70 transition-colors rounded-md px-1 ${indent ? "pl-5" : ""}`}>
-            <span className="text-xs text-gray-600">{label}</span>
-            <span className="text-xs font-semibold text-gray-800">{value}</span>
+    const EditInput = ({ fk }: { fk: string }) => (
+        <input type="number" value={ev(fk)} onChange={e => setev(fk, e.target.value)}
+            className="w-28 px-2 py-0.5 text-xs border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-400 text-right tabular-nums bg-blue-50"
+            placeholder="0" />
+    );
+
+    // Section subtotal row (bold, left accent, always visible)
+    const SRow = ({ label, fk, val }: { label: string; fk?: string; val: number | null | undefined }) => (
+        <div className="flex items-center justify-between py-1.5 px-2 mt-1.5 bg-blue-50 border-l-2 border-blue-400 rounded-r-md">
+            <span className="text-[11px] font-bold text-blue-900">{label}</span>
+            <span className={`text-[11px] font-extrabold tabular-nums ${val == null ? "text-blue-200" : "text-blue-900"}`}>
+                {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
+            </span>
         </div>
     );
 
-    const SubTotal = ({ label, value, color }: { label: string; value: React.ReactNode; color: string }) => {
-        const cls: Record<string, string> = {
-            emerald: "bg-emerald-50 text-emerald-700 border-emerald-400",
-            red: "bg-red-50 text-red-700 border-red-400",
-            indigo: "bg-indigo-50 text-indigo-700 border-indigo-400",
-            blue: "bg-blue-50 text-blue-700 border-blue-400",
-            amber: "bg-amber-50 text-amber-700 border-amber-400",
-            purple: "bg-purple-50 text-purple-700 border-purple-400",
-        };
+    // Individual line item (indented, hidden when null in view mode)
+    const LRow = ({ label, fk, val }: { label: string; fk?: string; val: number | null | undefined }) => {
+        if (!editMode && val == null) return null;
         return (
-            <div className={`flex justify-between items-center py-1.5 mt-2 mb-0.5 rounded-lg px-3 border-l-2 ${cls[color]}`}>
-                <span className="text-xs font-bold tracking-wide">{label}</span>
-                {value != null && <span className="text-sm font-extrabold">{value}</span>}
+            <div className="flex items-center justify-between py-0.5 px-2 pl-5">
+                <span className="text-[11px] text-gray-500">{label}</span>
+                <span className={`text-[11px] tabular-nums ${val == null ? "text-gray-300" : "text-gray-700 font-medium"}`}>
+                    {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
+                </span>
             </div>
         );
     };
 
-    const TotalBar = ({ label, value, color }: { label: string; value: React.ReactNode; color: string }) => {
-        const cls: Record<string, string> = {
-            emerald: "from-emerald-600 to-emerald-500",
-            red: "from-red-600 to-red-500",
-            indigo: "from-indigo-600 to-indigo-500",
-            purple: "from-purple-600 to-purple-500",
-        };
-        return (
-            <div className={`flex justify-between items-center py-2 mt-2 px-3 rounded-xl bg-gradient-to-r ${cls[color]} shadow-sm`}>
-                <span className="text-xs font-black text-white uppercase tracking-wider">{label}</span>
-                <span className="text-sm font-black text-white">{value}</span>
-            </div>
-        );
-    };
+    // Grand total bar
+    const GRow = ({ label, fk, val }: { label: string; fk?: string; val: number | null | undefined }) => (
+        <div className="flex items-center justify-between mt-2 px-3 py-2 rounded-lg bg-blue-700">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-100">{label}</span>
+            <span className={`text-sm font-black tabular-nums ${val == null ? "text-blue-400" : "text-white"}`}>
+                {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
+            </span>
+        </div>
+    );
 
-    const SectionLabel = ({ children, color }: { children: React.ReactNode; color: "emerald" | "red" | "indigo" }) => {
-        const bar = { emerald: "bg-emerald-400", red: "bg-red-400", indigo: "bg-indigo-400" }[color];
-        const text = { emerald: "text-emerald-600", red: "text-red-600", indigo: "text-indigo-600" }[color];
-        return (
-            <div className="flex items-center gap-2 mt-4 mb-1">
-                <div className={`w-1 h-3.5 rounded-full ${bar}`} />
-                <span className={`text-xs font-bold uppercase tracking-widest ${text}`}>{children}</span>
-            </div>
-        );
+    const ColHead = ({ children }: { children: React.ReactNode }) => (
+        <div className="mb-1.5 pb-1 border-b border-blue-100">
+            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">{children}</span>
+        </div>
+    );
+
+    const handleSave = async () => {
+        if (!onEditSave) return;
+        setSaving(true);
+        try {
+            const updated = JSON.parse(JSON.stringify(d));
+            const pd = updated.periodData?.[activePeriod];
+            if (pd) {
+                for (const f of BG_EDITABLE_FIELDS) pd.balanceGeneral[f] = parseN(ev(`bg.${f}`));
+                for (const f of ER_EDITABLE_FIELDS) pd.estadoResultados[f] = parseN(ev(`er.${f}`));
+                if (activePeriod === updated.periodData.length - 1) {
+                    updated.balanceGeneral = pd.balanceGeneral;
+                    updated.estadoResultados = pd.estadoResultados;
+                }
+            }
+            onEditSave(updated);
+        } finally { setSaving(false); }
     };
 
     return (
-        <div className="mt-4 space-y-4">
-            {/* Period selector — centered segmented control */}
+        <div className="mt-4 space-y-3">
+            {/* Edit mode bar */}
+            {editMode && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl">
+                    <span className="text-xs text-blue-700 font-semibold flex-1">✏ Modo edición — modifica los valores directamente</span>
+                    <button onClick={handleSave} disabled={saving}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50">
+                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                        Guardar cambios
+                    </button>
+                </div>
+            )}
+
+            {/* Period selector */}
             {periodos.length > 1 && (
                 <div className="flex justify-center">
                     <div className="inline-flex bg-gray-100 rounded-xl p-1 gap-0.5">
                         {periodos.map((p, i) => (
-                            <button
-                                key={p}
-                                onClick={() => setActivePeriod(i)}
-                                className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                                    activePeriod === i
-                                        ? "bg-white text-blue-700 shadow-sm"
-                                        : "text-gray-400 hover:text-gray-600"
-                                }`}
-                            >
+                            <button key={p} onClick={() => setActivePeriod(i)}
+                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${activePeriod === i ? "bg-white text-blue-700 shadow-sm" : "text-gray-400 hover:text-gray-600"}`}>
                                 {p}
                             </button>
                         ))}
@@ -661,127 +667,92 @@ function FinancialStatementPreview({ info }: { info: UploadedDocInfo }) {
                 </div>
             )}
 
-            {/* Balance General + Estado de Resultados */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Balance General */}
-                <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
-                    <div className="px-4 py-3 bg-gradient-to-r from-blue-700 to-blue-500 flex items-center gap-2">
-                        <BarChart2 className="w-4 h-4 text-white/70" />
-                        <span className="text-sm font-bold text-white">Balance General</span>
-                        {periodos[activePeriod] && (
-                            <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
-                        )}
-                    </div>
-                    <div className="p-4">
-                        <SectionLabel color="emerald">Activo</SectionLabel>
-                        <SubTotal label="Activo Circulante" value={fmtSub(bg.activoCirculante)} color="emerald" />
-                        <Row label="Inventarios" value={fmt(bg.inventarios)} indent />
-                        <Row label="Clientes" value={fmt(bg.clientes)} indent />
-                        <Row label="Deudores Diversos" value={fmt(bg.deudoresDiversos)} indent />
-                        <SubTotal label="Activo Fijo" value={fmtSub(bg.activoFijo)} color="emerald" />
-                        <Row label="Terrenos y Edificios" value={fmt(bg.terrenosEdificios)} indent />
-                        <Row label="Maquinaria y Equipo" value={fmt(bg.maquinariaEquipo)} indent />
-                        <Row label="Equipo de Transporte" value={fmt(bg.equipoTransporte)} indent />
-                        <SubTotal label="Otros Activos" value={fmtSub(bg.otrosActivos)} color="emerald" />
-                        <Row label="Intangibles" value={fmt(bg.intangibles)} indent />
-                        <TotalBar label="Activo Total" value={fmt(bg.activoTotal)} color="emerald" />
-
-                        <SectionLabel color="red">Pasivo</SectionLabel>
-                        <SubTotal label="Pasivo Circulante" value={fmtSub(bg.pasivoCirculante)} color="red" />
-                        <Row label="Proveedores" value={fmt(bg.proveedores)} indent />
-                        <Row label="Acreedores Diversos" value={fmt(bg.acreedoresDiversos)} indent />
-                        <Row label="Documentos por Pagar Corto Plazo" value={fmt(bg.docsPagarCP)} indent />
-                        <SubTotal label="Pasivo Largo Plazo" value={fmtSub(bg.pasivoLargoPlazo)} color="red" />
-                        <Row label="Documentos por Pagar Largo Plazo" value={fmt(bg.docsPagarLP)} indent />
-                        <Row label="Otros Pasivos" value={fmt(bg.otrosPasivos)} indent />
-                        <TotalBar label="Pasivo Total" value={fmt(bg.pasivoTotal)} color="red" />
-
-                        <SectionLabel color="indigo">Capital</SectionLabel>
-                        <Row label="Capital Social" value={fmt(bg.capitalSocial)} />
-                        <Row label="Utilidad de Ejercicios Anteriores" value={fmt(bg.utilidadesAnteriores)} />
-                        <TotalBar label="Capital Contable" value={fmt(bg.capitalContable)} color="indigo" />
-                    </div>
-                </div>
-
-                {/* Estado de Resultados */}
-                <div className="bg-white border border-purple-100 rounded-xl overflow-hidden shadow-sm">
-                    <div className="px-4 py-3 bg-gradient-to-r from-violet-700 to-purple-500 flex items-center gap-2">
-                        <BarChart2 className="w-4 h-4 text-white/70" />
-                        <span className="text-sm font-bold text-white">Estado de Resultados</span>
-                        {periodos[activePeriod] && (
-                            <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
-                        )}
-                    </div>
-                    <div className="p-4">
-                        <SubTotal label="VENTAS" value={fmt(er.ventas)} color="purple" />
-                        <Row label="Costos de Venta" value={fmt(er.costoVenta)} indent />
-                        <SubTotal label="Utilidad Bruta" value={fmtSub(er.utilidadBruta)} color="emerald" />
-                        <Row label="Gastos de Operación" value={fmt(er.gastosOperacion)} indent />
-                        <SubTotal label="Utilidad de Operación" value={fmtSub(er.utilidadOperacion)} color="blue" />
-                        <Row label="Gastos Financieros" value={fmt(er.gastosFinancieros)} indent />
-                        <Row label="Otros Productos" value={fmt(er.otrosProductos)} indent />
-                        <Row label="Otros Gastos" value={fmt(er.otrosGastos)} indent />
-                        <SubTotal label="Utilidad Antes de Impuestos" value={fmtSub(er.utilidadAntesImpuestos)} color="amber" />
-                        <Row label="Impuestos" value={fmt(er.impuestos)} indent />
-                        <Row label="Depreciación" value={fmt(er.depreciacion)} indent />
-                        <TotalBar label="Utilidad Neta" value={fmt(er.utilidadNeta)} color="purple" />
-                    </div>
-                </div>
-            </div>
-
-            {/* KPIs */}
-            <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
-                <div className="px-4 py-3 bg-gradient-to-r from-gray-700 to-gray-500 flex items-center gap-2">
-                    <BarChart2 className="w-4 h-4 text-white/70" />
-                    <span className="text-sm font-bold text-white">Indicadores Financieros</span>
+            {/* ── Balance General ────────────────────────────────────── */}
+            <div className="bg-white border border-blue-100 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-blue-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wide">Balance General</span>
                     {periodos[activePeriod] && (
-                        <span className="ml-auto text-xs font-semibold bg-white/20 text-white px-2 py-0.5 rounded-full">{periodos[activePeriod]}</span>
+                        <span className="text-xs font-semibold bg-white/15 text-blue-200 px-2 py-0.5 rounded-full">
+                            al 31 de Diciembre de {periodos[activePeriod]}
+                        </span>
                     )}
                 </div>
-                <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {[
-                        { label: "Liquidez Circulante", value: fmtX(kp.liquidezCirculante), color: "blue" },
-                        { label: "Prueba del Ácido", value: fmtX(kp.pruebaAcido), color: "blue" },
-                        { label: "Rotación Cuentas por Cobrar", value: fmtX(kp.rotacionCxC), color: "emerald" },
-                        { label: "Rotación Cuentas por Pagar", value: fmtDias(kp.rotacionCxP), color: "emerald" },
-                        { label: "Rotación Inventarios", value: fmtDias(kp.rotacionInventarios), color: "emerald" },
-                        { label: "Deuda Total", value: fmtPct(kp.deudaTotal), color: "amber" },
-                        { label: "Deuda / Capital", value: fmtX(kp.deudaCapital), color: "amber" },
-                        { label: "Deuda Largo Plazo", value: fmtX(kp.deudaLP), color: "amber" },
-                        { label: "Margen de Utilidad", value: fmtPct(kp.margenUtilidad), color: "purple" },
-                        { label: "ROA", value: fmtPct(kp.roa), color: "purple" },
-                        { label: "ROE", value: fmtPct(kp.roe), color: "purple" },
-                    ].map(({ label, value, color }) => {
-                        const colors: Record<string, string> = {
-                            blue: "bg-blue-50 border-blue-100 text-blue-700",
-                            emerald: "bg-emerald-50 border-emerald-100 text-emerald-700",
-                            amber: "bg-amber-50 border-amber-100 text-amber-700",
-                            purple: "bg-purple-50 border-purple-100 text-purple-700",
-                        };
-                        return (
-                            <div key={label} className={`rounded-xl border p-3 ${colors[color]}`}>
-                                <p className="text-xs opacity-70 mb-1">{label}</p>
-                                <p className="text-base font-extrabold">{value}</p>
-                            </div>
-                        );
-                    })}
+
+                {/* Two-column layout matching PDF */}
+                <div className="grid grid-cols-2 divide-x divide-blue-50">
+                    {/* ACTIVO */}
+                    <div className="p-3 space-y-0.5">
+                        <ColHead>Activo</ColHead>
+                        <SRow label="Activo Circulante" fk="bg.activoCirculante" val={bg.activoCirculante} />
+                        <LRow label="Clientes" fk="bg.clientes" val={bg.clientes} />
+                        <LRow label="Deudores Diversos" fk="bg.deudoresDiversos" val={bg.deudoresDiversos} />
+                        <LRow label="Inventarios" fk="bg.inventarios" val={bg.inventarios} />
+                        <SRow label="Activo Fijo" fk="bg.activoFijo" val={bg.activoFijo} />
+                        <LRow label="Terreno y Edificación" fk="bg.terrenosEdificios" val={bg.terrenosEdificios} />
+                        <LRow label="Maquinaria y Equipo" fk="bg.maquinariaEquipo" val={bg.maquinariaEquipo} />
+                        <LRow label="Equipo de Transporte" fk="bg.equipoTransporte" val={bg.equipoTransporte} />
+                        <SRow label="Activo Diferido" fk="bg.otrosActivos" val={bg.otrosActivos} />
+                        <GRow label="Suma del Activo" fk="bg.activoTotal" val={bg.activoTotal} />
+                    </div>
+
+                    {/* PASIVO + CAPITAL */}
+                    <div className="p-3 space-y-0.5">
+                        <ColHead>Pasivo</ColHead>
+                        <SRow label="Pasivo Circulante" fk="bg.pasivoCirculante" val={bg.pasivoCirculante} />
+                        <LRow label="Proveedores" fk="bg.proveedores" val={bg.proveedores} />
+                        <LRow label="Acreedores Diversos" fk="bg.acreedoresDiversos" val={bg.acreedoresDiversos} />
+                        <LRow label="Docs. x Pagar CP" fk="bg.docsPagarCP" val={bg.docsPagarCP} />
+                        <SRow label="Pasivo a Largo Plazo" fk="bg.pasivoLargoPlazo" val={bg.pasivoLargoPlazo} />
+                        <LRow label="Docs. x Pagar LP" fk="bg.docsPagarLP" val={bg.docsPagarLP} />
+                        <LRow label="Otros Pasivos" fk="bg.otrosPasivos" val={bg.otrosPasivos} />
+                        <div className="mt-3 mb-0.5 pb-1 border-b border-blue-100">
+                            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">Capital</span>
+                        </div>
+                        <SRow label="Capital Contable" fk="bg.capitalContable" val={bg.capitalContable} />
+                        <LRow label="Capital Social" fk="bg.capitalSocial" val={bg.capitalSocial} />
+                        <LRow label="Result. Ejercicios Ant." fk="bg.utilidadesAnteriores" val={bg.utilidadesAnteriores} />
+                        <LRow label="Utilidad del Ejercicio" val={er.utilidadNeta} />
+                        <GRow label="Suma Pasivo y Capital" val={bg.activoTotal} />
+                    </div>
                 </div>
             </div>
 
-            {/* Debug: texto crudo extraído del PDF */}
-            <div className="mt-3">
-                <button
-                    onClick={() => setShowRaw(r => !r)}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
-                >
-                    {showRaw ? "▲ Ocultar texto extraído" : "▼ Ver texto crudo del PDF (debug)"}
-                </button>
-                {showRaw && (
-                    <pre className="mt-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-3 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
-                        {d.rawText ?? "No disponible"}
-                    </pre>
-                )}
+            {/* ── Estado de Resultados ───────────────────────────────── */}
+            <div className="bg-white border border-blue-100 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-blue-800 flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wide">Estado de Resultados</span>
+                    {periodos[activePeriod] && (
+                        <span className="text-xs font-semibold bg-white/15 text-blue-200 px-2 py-0.5 rounded-full">
+                            Enero — Diciembre {periodos[activePeriod]}
+                        </span>
+                    )}
+                </div>
+                <div className="p-3 space-y-0.5">
+                    <SRow label="Total de Ingresos" fk="er.ventas" val={er.ventas} />
+                    <LRow label="Costo Directo de Producción" fk="er.costoVenta" val={er.costoVenta} />
+                    <SRow label="Utilidad de Operación" fk="er.utilidadBruta" val={er.utilidadBruta} />
+                    <LRow label="Gastos de Administración" fk="er.gastosOperacion" val={er.gastosOperacion} />
+                    <LRow label="Gastos Financieros" fk="er.gastosFinancieros" val={er.gastosFinancieros} />
+                    <SRow label="Utilidad Antes de Impuestos" fk="er.utilidadAntesImpuestos" val={er.utilidadAntesImpuestos} />
+                    <LRow label="Provisión ISR y PTU" fk="er.impuestos" val={er.impuestos} />
+                    <GRow label="Utilidad Neta" fk="er.utilidadNeta" val={er.utilidadNeta} />
+                </div>
             </div>
+
+            {/* Raw text toggle (debug) */}
+            {!editMode && (
+                <div>
+                    <button onClick={() => setShowRaw(r => !r)}
+                        className="text-[11px] text-gray-400 hover:text-gray-600 underline underline-offset-2">
+                        {showRaw ? "▲ Ocultar texto extraído" : "▼ Ver texto crudo del PDF"}
+                    </button>
+                    {showRaw && (
+                        <pre className="mt-2 text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-xl p-3 whitespace-pre-wrap break-all max-h-64 overflow-y-auto">
+                            {d.rawText ?? "No disponible"}
+                        </pre>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -825,6 +796,8 @@ function TabDocumentos({ caso }: { caso: Case }) {
     return (
         <>
         <div className="space-y-3">
+
+
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -1016,68 +989,28 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                                                     </div>
                                                                                 )}
 
-                                                                                {/* Edit data form */}
-                                                                                {isEditing && editingFile?.mode === "edit" && (
-                                                                                    <div className="p-3 border-t border-gray-100 space-y-2">
-                                                                                        <p className="text-xs font-bold text-gray-500">Editar datos extraídos (principales)</p>
-                                                                                        <div className="grid grid-cols-2 gap-2">
-                                                                                            {[
-                                                                                                { key: "ventas", label: "Ventas" },
-                                                                                                { key: "costoVenta", label: "Costo de Venta" },
-                                                                                                { key: "utilidadNeta", label: "Utilidad Neta" },
-                                                                                                { key: "activoTotal", label: "Activo Total" },
-                                                                                                { key: "pasivoTotal", label: "Pasivo Total" },
-                                                                                                { key: "capitalContable", label: "Capital Contable" },
-                                                                                            ].map(({ key, label }) => (
-                                                                                                <div key={key}>
-                                                                                                    <label className="text-xs text-gray-400 mb-0.5 block">{label}</label>
-                                                                                                    <input
-                                                                                                        type="number"
-                                                                                                        value={editValues[key] ?? ""}
-                                                                                                        onChange={e => setEditValues(v => ({ ...v, [key]: e.target.value }))}
-                                                                                                        className="w-full px-2 py-1.5 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-purple-400"
-                                                                                                        placeholder="0"
-                                                                                                    />
-                                                                                                </div>
-                                                                                            ))}
-                                                                                        </div>
-                                                                                        <button
-                                                                                            disabled={editSaving}
-                                                                                            onClick={async () => {
+                                                                                {/* Edit data — editable preview with same design */}
+                                                                                {isEditing && editingFile?.mode === "edit" && parsedData && (
+                                                                                    <div className="border-t border-blue-100">
+                                                                                        <FinancialStatementPreview
+                                                                                            info={{ ...uploadedInfo ?? { nombre: file.nombre, estatus: file.estatus }, financialData: parsedData }}
+                                                                                            editMode
+                                                                                            onEditSave={async (updated) => {
                                                                                                 setEditSaving(true);
                                                                                                 try {
-                                                                                                    // Merge edited values into existing parsedData
-                                                                                                    const updated = JSON.parse(JSON.stringify(parsedData));
-                                                                                                    if (updated.periodData?.[0]) {
-                                                                                                        const pd = updated.periodData[0];
-                                                                                                        const n = (k: string) => editValues[k] !== "" ? Number(editValues[k]) : null;
-                                                                                                        pd.estadoResultados.ventas = n("ventas");
-                                                                                                        pd.estadoResultados.costoVenta = n("costoVenta");
-                                                                                                        pd.estadoResultados.utilidadNeta = n("utilidadNeta");
-                                                                                                        pd.balanceGeneral.activoTotal = n("activoTotal");
-                                                                                                        pd.balanceGeneral.pasivoTotal = n("pasivoTotal");
-                                                                                                        pd.balanceGeneral.capitalContable = n("capitalContable");
-                                                                                                    }
                                                                                                     const res = await fetch(`/api/expedientes/${caso.id}/documentos/${file.id}`, {
                                                                                                         method: "PATCH",
                                                                                                         headers: { "Content-Type": "application/json" },
                                                                                                         body: JSON.stringify({ datosExtraidos: updated }),
                                                                                                     });
                                                                                                     if (!res.ok) throw new Error("Error al guardar");
-                                                                                                    // Update session state too
-                                                                                                    setUploaded(prev => ({
-                                                                                                        ...prev,
-                                                                                                        [doc.id]: { ...prev[doc.id], financialData: updated, docDbId: file.id },
-                                                                                                    }));
+                                                                                                    setUploaded(prev => ({ ...prev, [doc.id]: { ...prev[doc.id], financialData: updated, docDbId: file.id } }));
                                                                                                     setEditingFile(null);
                                                                                                     showToast("Datos actualizados");
                                                                                                 } catch { showToast("Error al guardar datos"); }
                                                                                                 finally { setEditSaving(false); }
                                                                                             }}
-                                                                                            className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50">
-                                                                                            {editSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-                                                                                            Guardar cambios
-                                                                                        </button>
+                                                                                        />
                                                                                     </div>
                                                                                 )}
 
@@ -1132,7 +1065,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
 
         {/* Toast notification */}
         {toast && (
-            <div className="fixed bottom-6 right-6 z-50 bg-gray-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5">
+            <div className="fixed bottom-6 right-6 z-50 bg-blue-900 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                 {toast}
             </div>
@@ -1384,6 +1317,18 @@ function TabAnalisis({ caso }: { caso: Case }) {
         try { return JSON.parse(caso.matrizRiesgo ?? "{}"); }
         catch { return {}; }
     });
+
+    // KPIs — file selector for estados-financieros documents
+    const allFinancialDocs = [...(caso.documentos ?? [])]
+        .filter((d: any) => d.tipo === "estados-financieros" && d.datosExtraidos)
+        .sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    const [selectedFinDocId, setSelectedFinDocId] = useState<string | null>(null);
+    const selectedFinDoc = allFinancialDocs.find((d: any) => d.id === selectedFinDocId) ?? allFinancialDocs[0];
+    const financialData = selectedFinDoc?.datosExtraidos
+        ? (() => { try { return JSON.parse(selectedFinDoc.datosExtraidos); } catch { return null; } })()
+        : null;
+    const kpiPeriods: string[] = financialData?.periodos ?? [];
+    const kpiPeriodData: any[] = financialData?.periodData ?? [];
     const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
@@ -1432,93 +1377,277 @@ function TabAnalisis({ caso }: { caso: Case }) {
     const resolucion = totalPuntos >= 120 ? "Aprobado" : totalPuntos >= 75 ? "Dudoso" : "Rechazado";
 
     const sectionColors: Record<string, { header: string; badge: string; row: string; dot: string }> = {
-        blue:    { header: "from-blue-700 to-blue-500",     badge: "bg-white/20 text-white", row: "hover:bg-blue-50",    dot: "bg-blue-500" },
-        violet:  { header: "from-violet-700 to-violet-500", badge: "bg-white/20 text-white", row: "hover:bg-violet-50",  dot: "bg-violet-500" },
-        amber:   { header: "from-amber-600 to-amber-400",   badge: "bg-white/20 text-white", row: "hover:bg-amber-50",   dot: "bg-amber-500" },
-        emerald: { header: "from-emerald-700 to-emerald-500",badge: "bg-white/20 text-white", row: "hover:bg-emerald-50", dot: "bg-emerald-500" },
-        indigo:  { header: "from-indigo-700 to-indigo-500", badge: "bg-white/20 text-white", row: "hover:bg-indigo-50",  dot: "bg-indigo-500" },
-        purple:  { header: "from-purple-700 to-purple-500", badge: "bg-white/20 text-white", row: "hover:bg-purple-50",  dot: "bg-purple-500" },
-        rose:    { header: "from-rose-700 to-rose-500",     badge: "bg-white/20 text-white", row: "hover:bg-rose-50",    dot: "bg-rose-500" },
+        blue:    { header: "from-blue-900 to-blue-700",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-600" },
+        violet:  { header: "from-blue-800 to-blue-600",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-500" },
+        amber:   { header: "from-blue-700 to-blue-500",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-400" },
+        emerald: { header: "from-blue-900 to-blue-700",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-600" },
+        indigo:  { header: "from-blue-800 to-blue-600",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-500" },
+        purple:  { header: "from-blue-700 to-blue-500",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-400" },
+        rose:    { header: "from-blue-900 to-blue-700",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-600" },
     };
 
+    type KpiColor = "green" | "yellow" | "red" | "gray";
+    const kpiColor = (v: number | null, lo: number, hi: number, goodHigh: boolean): KpiColor => {
+        if (v === null) return "gray";
+        if (goodHigh) return v >= hi ? "green" : v >= lo ? "yellow" : "red";
+        return v <= lo ? "green" : v <= hi ? "yellow" : "red";
+    };
+    const kpiTextCls: Record<KpiColor, string> = {
+        green: "text-emerald-600", yellow: "text-amber-500", red: "text-red-500", gray: "text-gray-400",
+    };
+    const kpiBgCls: Record<KpiColor, string> = {
+        green: "bg-emerald-50 border-emerald-200",
+        yellow: "bg-amber-50 border-amber-200",
+        red: "bg-red-50 border-red-200",
+        gray: "bg-gray-50 border-gray-200",
+    };
+    const kpiBadgeCls: Record<KpiColor, string> = {
+        green: "bg-emerald-100 text-emerald-700",
+        yellow: "bg-amber-100 text-amber-700",
+        red: "bg-red-100 text-red-600",
+        gray: "bg-gray-100 text-gray-400",
+    };
+    const n = (v: number) => Math.round(v).toLocaleString("es-MX");
+
+    type KpiDef = {
+        key: string; label: string;
+        formulaLabel: string;
+        getVals: (bg: any, er: any) => string | null;
+        calc?: (bg: any, er: any) => number | null;
+        fmt: (v: number | null) => string;
+        lo: number; hi: number; goodHigh: boolean;
+        interpret: (v: number | null) => string;
+    };
+    const KPI_GROUPS: { group: string; color: string; textColor: string; kpis: KpiDef[] }[] = [
+        {
+            group: "Liquidez", color: "bg-blue-800", textColor: "text-blue-800",
+            kpis: [
+                {
+                    key: "liquidezCirculante", label: "Current Ratio",
+                    formulaLabel: "Activo Circulante / Pasivo Circulante",
+                    getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
+                        ? `${n(bg.activoCirculante)} / ${n(bg.pasivoCirculante)}` : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 1.0, hi: 2.0, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 2 ? "Liquidez alta" : v >= 1 ? "Liquidez adecuada" : "Liquidez baja",
+                },
+                {
+                    key: "capitalTrabajo", label: "Capital de Trabajo",
+                    formulaLabel: "Activo Circulante − Pasivo Circulante",
+                    getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
+                        ? `${n(bg.activoCirculante)} − ${n(bg.pasivoCirculante)}` : null,
+                    calc: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
+                        ? bg.activoCirculante - bg.pasivoCirculante : null,
+                    fmt: (v) => v != null ? `$${n(v)}` : "—",
+                    lo: 0, hi: Infinity, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v > 0 ? "Capital positivo" : "Capital negativo",
+                },
+            ],
+        },
+        {
+            group: "Rentabilidad", color: "bg-blue-700", textColor: "text-blue-700",
+            kpis: [
+                {
+                    key: "margenOperativo", label: "Margen Operativo",
+                    formulaLabel: "Utilidad Operativa / Ingresos Totales",
+                    getVals: (_, er) => er.utilidadBruta != null && er.ventas != null
+                        ? `${n(er.utilidadBruta)} / ${n(er.ventas)}` : null,
+                    calc: (_, er) => er.utilidadBruta != null && er.ventas != null && er.ventas !== 0
+                        ? er.utilidadBruta / er.ventas : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.10, hi: 0.20, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 0.20 ? "Margen alto" : v >= 0.10 ? "Margen moderado" : "Margen bajo",
+                },
+                {
+                    key: "margenUtilidad", label: "Margen Neto",
+                    formulaLabel: "Utilidad Neta / Ingresos Totales",
+                    getVals: (_, er) => er.utilidadNeta != null && er.ventas != null
+                        ? `${n(er.utilidadNeta)} / ${n(er.ventas)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.05, hi: 0.10, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 0.10 ? "Margen alto" : v >= 0.05 ? "Margen moderado" : "Margen bajo",
+                },
+                {
+                    key: "roa", label: "ROA",
+                    formulaLabel: "Utilidad Neta / Activos Totales",
+                    getVals: (bg, er) => er.utilidadNeta != null && bg.activoTotal != null
+                        ? `${n(er.utilidadNeta)} / ${n(bg.activoTotal)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.02, hi: 0.05, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 0.05 ? "Rendimiento alto" : v >= 0.02 ? "Rendimiento moderado" : "Rendimiento bajo",
+                },
+                {
+                    key: "roe", label: "ROE",
+                    formulaLabel: "Utilidad Neta / Capital Contable",
+                    getVals: (bg, er) => er.utilidadNeta != null && bg.capitalContable != null
+                        ? `${n(er.utilidadNeta)} / ${n(bg.capitalContable)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.05, hi: 0.10, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 0.10 ? "Rendimiento alto" : v >= 0.05 ? "Rendimiento moderado" : "Rendimiento bajo",
+                },
+            ],
+        },
+        {
+            group: "Endeudamiento", color: "bg-blue-600", textColor: "text-blue-600",
+            kpis: [
+                {
+                    key: "deudaTotal", label: "Debt Ratio",
+                    formulaLabel: "Pasivo Total / Activos Totales",
+                    getVals: (bg) => bg.pasivoTotal != null && bg.activoTotal != null
+                        ? `${n(bg.pasivoTotal)} / ${n(bg.activoTotal)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.40, hi: 0.60, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 0.40 ? "Endeudamiento bajo" : v <= 0.60 ? "Endeudamiento moderado" : "Endeudamiento alto",
+                },
+                {
+                    key: "deudaCapital", label: "Deuda a Capital",
+                    formulaLabel: "Pasivo Total / Capital Contable",
+                    getVals: (bg) => bg.pasivoTotal != null && bg.capitalContable != null
+                        ? `${n(bg.pasivoTotal)} / ${n(bg.capitalContable)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
+                    lo: 0.50, hi: 1.0, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 0.50 ? "Apalancamiento bajo" : v <= 1.0 ? "Apalancamiento moderado" : "Apalancamiento alto",
+                },
+            ],
+        },
+    ];
+
+    const resClr = resolucion === "Aprobado"
+        ? { bg: "bg-emerald-500", light: "bg-emerald-50", border: "border-emerald-200", text: "text-emerald-700", desc: "text-emerald-600" }
+        : resolucion === "Dudoso"
+        ? { bg: "bg-amber-500",   light: "bg-amber-50",   border: "border-amber-200",   text: "text-amber-700",   desc: "text-amber-600" }
+        : { bg: "bg-red-500",     light: "bg-red-50",     border: "border-red-200",     text: "text-red-700",     desc: "text-red-600" };
+
     return (
-        <div className="space-y-4">
-            {/* ── Encabezado con puntuación total ── */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-                <div className="flex items-start justify-between flex-wrap gap-4">
-                    <div>
-                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Evaluación de Crédito — Personas Morales</p>
-                        <h2 className="text-2xl font-extrabold text-gray-900">{totalPuntos} <span className="text-sm font-semibold text-gray-400">/ {maxPuntos} pts</span></h2>
-                        <p className="text-xs text-gray-400 mt-1">{seleccionados} de {totalFactores} factores evaluados</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-2">
-                        <span className={`px-4 py-1.5 rounded-full text-sm font-bold ${
-                            resolucion === "Aprobado" ? "bg-emerald-100 text-emerald-700" :
-                            resolucion === "Dudoso"   ? "bg-amber-100 text-amber-700" :
-                                                        "bg-red-100 text-red-700"
-                        }`}>{resolucion === "Aprobado" ? "✓ " : resolucion === "Dudoso" ? "⚠ " : "✕ "}{resolucion}</span>
-                        {saveStatus === "saving" && <span className="text-xs text-gray-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" />Guardando…</span>}
-                        {saveStatus === "saved"  && <span className="text-xs text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-3 h-3" />Guardado</span>}
-                    </div>
+        <div className="space-y-3">
+            {/* ── Indicadores Financieros ─────────────────────────── */}
+            <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-3 bg-blue-800">
+                    <span className="text-sm font-bold text-white uppercase tracking-wide">Indicadores Financieros</span>
                 </div>
 
-                {/* Barra de puntuación total */}
-                <div className="mt-4">
-                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
-                        {/* Zone markers */}
-                        <div className="absolute top-0 bottom-0 bg-red-200/60"    style={{ left: 0, width: `${(75/maxPuntos)*100}%` }} />
-                        <div className="absolute top-0 bottom-0 bg-amber-200/60"  style={{ left: `${(75/maxPuntos)*100}%`, width: `${((120-75)/maxPuntos)*100}%` }} />
-                        <div className="absolute top-0 bottom-0 bg-emerald-200/60" style={{ left: `${(120/maxPuntos)*100}%`, right: 0 }} />
-                        <div className={`absolute top-0 left-0 h-full rounded-full transition-all duration-500 ${
-                            totalPuntos >= 120 ? "bg-emerald-500" : totalPuntos >= 75 ? "bg-amber-500" : "bg-red-500"
-                        }`} style={{ width: `${Math.min((totalPuntos/maxPuntos)*100, 100)}%` }} />
-                    </div>
-                    <div className="flex justify-between mt-1 text-xs text-gray-400">
-                        <span>0</span>
-                        <span className="text-red-400">Rechazado &lt;75</span>
-                        <span className="text-amber-500">Dudoso 75–119</span>
-                        <span className="text-emerald-500">Aprobado ≥120</span>
-                        <span>{maxPuntos}</span>
-                    </div>
+                {/* Selector de archivo */}
+                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
+                    <span className="text-sm text-gray-500 font-medium flex-shrink-0">Archivo analizado</span>
+                    {allFinancialDocs.length === 0 ? (
+                        <span className="text-sm text-gray-400 italic">Sin estados financieros subidos</span>
+                    ) : (
+                        <select
+                            value={selectedFinDocId ?? allFinancialDocs[0]?.id ?? ""}
+                            onChange={e => setSelectedFinDocId(e.target.value)}
+                            className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer flex-1 min-w-0">
+                            {allFinancialDocs.map((doc: any) => (
+                                <option key={doc.id} value={doc.id}>
+                                    {doc.nombre ?? `Doc ${doc.id.slice(0,6)}`}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    {kpiPeriods.length > 0 && (
+                        <span className="text-sm text-blue-600 font-semibold flex-shrink-0">{kpiPeriods.join(" · ")}</span>
+                    )}
                 </div>
 
-                {/* Resumen por sección */}
-                <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {sectionScores.map((sc, i) => {
-                        const sec = MATRIX_SECTIONS[i];
-                        const pct = sc.maxPts > 0 ? Math.round((sc.pts / sc.maxPts) * 100) : 0;
-                        const clr = sectionColors[sec.color as string];
-                        return (
-                            <div key={sc.id} className="bg-gray-50 rounded-xl p-2.5">
-                                <div className="flex items-center gap-1.5 mb-1.5">
-                                    <div className={`w-1.5 h-1.5 rounded-full ${clr.dot}`} />
-                                    <p className="text-xs text-gray-500 font-semibold truncate">{sec.nombre}</p>
+                {allFinancialDocs.length === 0 || kpiPeriodData.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-sm text-gray-400">
+                        Sube un estado financiero en la pestaña <strong>Documentos</strong> para calcular los indicadores.
+                    </p>
+                ) : (
+                    <div className="p-4 space-y-5">
+                        {(() => {
+                            const lastPd = kpiPeriodData[kpiPeriodData.length - 1] ?? {};
+                            const bgData = lastPd.balanceGeneral ?? {};
+                            const erData = lastPd.estadoResultados ?? {};
+                            const groupTextCls: Record<string, string> = {
+                                "bg-blue-700": "text-blue-700", "bg-blue-600": "text-blue-600",
+                                "bg-blue-500": "text-blue-500", "bg-blue-800": "text-blue-800",
+                            };
+                            const cardAccent: Record<KpiColor, string> = {
+                                green: "border-t-emerald-400", yellow: "border-t-amber-400",
+                                red: "border-t-red-400", gray: "border-t-gray-200",
+                            };
+                            const cardBg: Record<KpiColor, string> = {
+                                green: "bg-emerald-50/60", yellow: "bg-amber-50/60",
+                                red: "bg-red-50/60", gray: "bg-gray-50",
+                            };
+                            const statusCls: Record<KpiColor, string> = {
+                                green: "text-emerald-600 bg-emerald-100",
+                                yellow: "text-amber-600 bg-amber-100",
+                                red: "text-red-500 bg-red-100",
+                                gray: "text-gray-400 bg-gray-100",
+                            };
+                            return KPI_GROUPS.map(({ group, color, kpis }) => (
+                                <div key={group}>
+                                    <p className={`text-xs font-black uppercase tracking-widest mb-2 ${groupTextCls[color]}`}>{group}</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {kpis.map((kpi) => {
+                                            const vals = kpiPeriodData.map((pd: any) => {
+                                                const stored = pd.kpis?.[kpi.key] ?? null;
+                                                if (stored != null) return stored;
+                                                return kpi.calc ? kpi.calc(pd.balanceGeneral ?? {}, pd.estadoResultados ?? {}) : null;
+                                            });
+                                            const lastVal = vals[vals.length - 1];
+                                            const clr = kpiColor(lastVal, kpi.lo, kpi.hi, kpi.goodHigh);
+                                            const formulaWithVals = kpi.getVals(bgData, erData);
+                                            const interpretation = kpi.interpret(lastVal);
+                                            return (
+                                                <div key={kpi.key} className={`rounded-xl border-t-2 border border-gray-100 p-3 ${cardAccent[clr]} ${cardBg[clr]}`}>
+                                                    <p className="text-sm font-semibold text-gray-600 leading-tight mb-1">{kpi.label}</p>
+                                                    <p className="text-xs text-gray-400 font-mono leading-tight mb-2">{kpi.formulaLabel}</p>
+                                                    <p className={`text-3xl font-black tabular-nums leading-none mb-1 ${kpiTextCls[clr]}`}>
+                                                        {kpi.fmt(lastVal)}
+                                                    </p>
+                                                    {formulaWithVals && (
+                                                        <p className="text-xs text-gray-400 font-mono leading-tight mb-2">{formulaWithVals}</p>
+                                                    )}
+                                                    {kpiPeriodData.length > 1 && (
+                                                        <div className="flex gap-2 mb-1.5">
+                                                            {vals.map((v: number | null, i: number) => (
+                                                                <span key={i} className="text-xs text-gray-500">
+                                                                    {kpiPeriods[i]}: <span className={`font-bold ${kpiTextCls[kpiColor(v, kpi.lo, kpi.hi, kpi.goodHigh)]}`}>{kpi.fmt(v)}</span>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${statusCls[clr]}`}>
+                                                        {interpretation}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                                <p className="text-sm font-extrabold text-gray-800">{sc.pts}<span className="text-xs font-normal text-gray-400">/{sc.maxPts}</span></p>
-                                <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                                    <div className={`h-1 rounded-full ${clr.dot} opacity-80`} style={{ width: `${pct}%` }} />
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                            ));
+                        })()}
+                    </div>
+                )}
             </div>
 
-            {/* ── Secciones de la matriz ── */}
+            {/* ── Separador Matriz de Riesgo ───────────────────────── */}
+            <div className="flex items-center gap-3 pt-2">
+                <div className="flex-1 h-px bg-gray-200" />
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-800 rounded-full">
+                    <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span className="text-xs font-black text-white uppercase tracking-widest">Matriz de Riesgo</span>
+                </div>
+                <div className="flex-1 h-px bg-gray-200" />
+            </div>
+
+
+            {/* ── Secciones de la matriz ───────────────────────────── */}
             {MATRIX_SECTIONS.map(section => {
                 const clr = sectionColors[section.color as string];
                 const secScore = sectionScores.find(s => s.id === section.id)!;
                 const completados = section.factores.filter(f => selecciones[f.id]).length;
                 return (
-                    <div key={section.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                        {/* Header */}
-                        <div className={`px-5 py-3 bg-gradient-to-r ${clr.header} flex items-center gap-3`}>
+                    <div key={section.id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                        <div className={`px-4 py-2.5 bg-gradient-to-r ${clr.header} flex items-center gap-2`}>
                             <span className="text-sm font-bold text-white flex-1">{section.nombre}</span>
-                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${clr.badge}`}>{completados}/{section.factores.length} factores</span>
-                            <span className={`text-xs font-bold px-2.5 py-1 rounded-full bg-white/25 text-white`}>{secScore.pts} pts</span>
+                            <span className="text-xs text-white/70">{completados}/{section.factores.length}</span>
+                            <span className="text-sm font-bold text-white bg-white/20 px-2 py-0.5 rounded-full">{secScore.pts} pts</span>
                         </div>
-
-                        {/* Factores */}
                         <div className="divide-y divide-gray-50">
                             {section.factores.map(factor => {
                                 const selectedId = selecciones[factor.id];
@@ -1527,36 +1656,29 @@ function TabAnalisis({ caso }: { caso: Case }) {
                                     : undefined;
                                 return (
                                     <div key={factor.id} className="px-4 py-3">
-                                        {/* Factor label + earned points */}
                                         <div className="flex items-center justify-between mb-2">
-                                            <p className="text-xs font-semibold text-gray-700">{factor.nombre}</p>
-                                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-2 ${
-                                                selectedOp ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-400"
+                                            <p className="text-sm font-semibold text-gray-700 leading-tight">{factor.nombre}</p>
+                                            <span className={`text-xs font-bold px-2 py-0.5 rounded flex-shrink-0 ml-2 ${
+                                                selectedOp ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
                                             }`}>
-                                                {selectedOp ? `${selectedOp.puntos} pts` : "—"}
+                                                {selectedOp ? `${selectedOp.puntos}p` : "—"}
                                             </span>
                                         </div>
-                                        {/* Options grid */}
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                                        <div className="flex flex-wrap gap-1.5">
                                             {(factor.opciones as readonly { id: string; valor: string; puntos: number }[]).map(op => {
                                                 const isSelected = selectedId === op.id;
                                                 return (
-                                                    <button
-                                                        key={op.id}
-                                                        onClick={() => handleSelect(factor.id, op.id)}
-                                                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs transition-all border ${
+                                                    <button key={op.id} onClick={() => handleSelect(factor.id, op.id)}
+                                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all border ${
                                                             isSelected
                                                                 ? "bg-blue-50 border-blue-300 text-blue-800 font-semibold"
-                                                                : `bg-gray-50 border-gray-100 text-gray-600 ${clr.row} hover:border-gray-200`
-                                                        }`}
-                                                    >
-                                                        <span className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-xs font-bold ${
-                                                            isSelected ? "border-blue-500 bg-blue-500 text-white" : "border-gray-300 bg-white text-transparent"
-                                                        }`}>✕</span>
-                                                        <span className="flex-1 leading-tight">{op.valor}</span>
-                                                        <span className={`flex-shrink-0 text-xs font-bold px-1.5 py-0.5 rounded-full ${
-                                                            isSelected ? "bg-blue-200 text-blue-700" : "bg-gray-200 text-gray-500"
-                                                        }`}>{op.puntos}</span>
+                                                                : `bg-gray-50 border-gray-100 text-gray-600 hover:bg-gray-100 hover:border-gray-200`
+                                                        }`}>
+                                                        <span className={`w-3.5 h-3.5 rounded border flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${
+                                                            isSelected ? "border-blue-500 bg-blue-500 text-white" : "border-gray-300"
+                                                        }`}>{isSelected ? "✓" : ""}</span>
+                                                        <span className="leading-tight">{op.valor}</span>
+                                                        <span className={`text-xs font-bold ${isSelected ? "text-blue-500" : "text-gray-400"}`}>{op.puntos}</span>
                                                     </button>
                                                 );
                                             })}
@@ -1569,42 +1691,62 @@ function TabAnalisis({ caso }: { caso: Case }) {
                 );
             })}
 
-            {/* ── Resolución final ── */}
-            <div className={`rounded-2xl border p-6 ${
-                resolucion === "Aprobado" ? "bg-emerald-50 border-emerald-200" :
-                resolucion === "Dudoso"   ? "bg-amber-50 border-amber-200" :
-                                            "bg-red-50 border-red-200"
-            }`}>
-                <div className="flex items-center gap-4 flex-wrap">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${
-                        resolucion === "Aprobado" ? "bg-emerald-100" :
-                        resolucion === "Dudoso"   ? "bg-amber-100" : "bg-red-100"
-                    }`}>
+            {/* ── Calificación final ──────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 pt-4 pb-2">
+                    <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Resultado de la Evaluación</p>
+
+                    {/* Barra total con zonas */}
+                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden mb-1">
+                        <div className="absolute inset-y-0 bg-red-200/70"     style={{ left: 0,                        width: `${(75/maxPuntos)*100}%` }} />
+                        <div className="absolute inset-y-0 bg-amber-200/70"   style={{ left: `${(75/maxPuntos)*100}%`, width: `${(45/maxPuntos)*100}%` }} />
+                        <div className="absolute inset-y-0 bg-emerald-200/70" style={{ left: `${(120/maxPuntos)*100}%`, right: 0 }} />
+                        <div className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${resClr.bg}`}
+                            style={{ width: `${Math.min((totalPuntos/maxPuntos)*100, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-4">
+                        <span className="text-red-400">Rechazado &lt;75</span>
+                        <span className="text-amber-500">Dudoso 75–119</span>
+                        <span className="text-emerald-500">Aprobado ≥120</span>
+                    </div>
+
+                    {/* Mini barras por sección */}
+                    <div className="grid grid-cols-4 gap-2 mb-4">
+                        {sectionScores.map((sc, i) => {
+                            const sec = MATRIX_SECTIONS[i];
+                            const pct = sc.maxPts > 0 ? (sc.pts / sc.maxPts) * 100 : 0;
+                            const clr = sectionColors[sec.color as string];
+                            return (
+                                <div key={sc.id} className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs text-gray-500 font-semibold truncate pr-1">{sec.nombre.split(" ").slice(0, 2).join(" ")}</span>
+                                        <span className="text-xs font-bold text-gray-700 flex-shrink-0">{sc.pts}<span className="text-gray-400 font-normal">/{sc.maxPts}</span></span>
+                                    </div>
+                                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className={`h-1.5 rounded-full ${clr.dot} transition-all`} style={{ width: `${pct}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Resolución */}
+                <div className={`px-4 py-3 flex items-center gap-4 border-t ${resClr.light} ${resClr.border}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black ${resClr.text} bg-white/70 flex-shrink-0 border ${resClr.border}`}>
                         {resolucion === "Aprobado" ? "✓" : resolucion === "Dudoso" ? "⚠" : "✕"}
                     </div>
-                    <div className="flex-1">
-                        <p className={`text-lg font-extrabold ${
-                            resolucion === "Aprobado" ? "text-emerald-800" :
-                            resolucion === "Dudoso"   ? "text-amber-800" : "text-red-800"
-                        }`}>Resolución: {resolucion}</p>
-                        <p className={`text-sm mt-0.5 ${
-                            resolucion === "Aprobado" ? "text-emerald-700" :
-                            resolucion === "Dudoso"   ? "text-amber-700" : "text-red-700"
-                        }`}>
-                            {resolucion === "Aprobado" && "Ponderación igual o mayor a 120 puntos. El expediente cumple los criterios para aprobación."}
-                            {resolucion === "Dudoso"   && "Ponderación entre 75 y 119 puntos. Requiere dictamen con razonamiento adicional para el Comité de Crédito."}
-                            {resolucion === "Rechazado" && "Ponderación menor a 75 puntos. El expediente no cumple los criterios mínimos de aprobación."}
+                    <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-black ${resClr.text}`}>{resolucion}</p>
+                        <p className={`text-sm mt-0.5 ${resClr.desc}`}>
+                            {resolucion === "Aprobado" && "Ponderación ≥120 pts — cumple criterios para aprobación."}
+                            {resolucion === "Dudoso"   && "Ponderación 75–119 pts — requiere dictamen adicional."}
+                            {resolucion === "Rechazado"&& "Ponderación <75 pts — no cumple los criterios mínimos."}
                         </p>
                     </div>
-                    <div className="text-right">
-                        <p className={`text-3xl font-black ${
-                            resolucion === "Aprobado" ? "text-emerald-700" :
-                            resolucion === "Dudoso"   ? "text-amber-700" : "text-red-700"
-                        }`}>{totalPuntos}</p>
-                        <p className="text-xs text-gray-500">de {maxPuntos} puntos posibles</p>
-                        {seleccionados < totalFactores && (
-                            <p className="text-xs text-gray-400 mt-1">({totalFactores - seleccionados} factores sin evaluar)</p>
-                        )}
+                    <div className="text-right flex-shrink-0">
+                        <p className={`text-3xl font-black tabular-nums ${resClr.text}`}>{totalPuntos}</p>
+                        <p className="text-sm text-gray-400">de {maxPuntos} pts</p>
                     </div>
                 </div>
             </div>
@@ -1707,7 +1849,7 @@ const TABS = [
     { id: "financiamiento", label: "Financiamiento", icon: Building2 },
 ];
 
-function CaseDetail({ caso, onBack }: { caso: Case; onBack: () => void }) {
+function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void; onUpdate?: (updated: Case) => void }) {
     const [activeTab, setActiveTab] = useState("resumen");
 
     return (
@@ -1739,7 +1881,7 @@ function CaseDetail({ caso, onBack }: { caso: Case; onBack: () => void }) {
             </div>
 
             {/* Tab content */}
-            {activeTab === "resumen" && <TabResumen caso={caso} />}
+            {activeTab === "resumen" && <TabResumen caso={caso} onUpdate={onUpdate} />}
             {activeTab === "documentos" && <TabDocumentos caso={caso} />}
             {activeTab === "analisis" && <TabAnalisis caso={caso} />}
             {activeTab === "financiamiento" && <TabFinanciamiento caso={caso} />}
@@ -1907,7 +2049,7 @@ export default function CasosPage() {
         return matchSearch && matchSituacion && matchEtapa;
     });
 
-    if (selectedCase) return <CaseDetail caso={selectedCase} onBack={() => setSelectedCase(null)} />;
+    if (selectedCase) return <CaseDetail caso={selectedCase} onBack={() => setSelectedCase(null)} onUpdate={updated => setSelectedCase(updated)} />;
 
     return (
         <div>

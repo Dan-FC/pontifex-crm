@@ -47,17 +47,23 @@ export interface EstadoResultados {
 }
 
 export interface KPIs {
+    // Liquidez
     liquidezCirculante: number | null;
+    capitalTrabajo: number | null;
     pruebaAcido: number | null;
+    // Actividad
     rotacionCxC: number | null;
     rotacionCxP: number | null;
     rotacionInventarios: number | null;
-    deudaTotal: number | null;
-    deudaCapital: number | null;
-    deudaLP: number | null;
+    // Rentabilidad
+    margenOperativo: number | null;
     margenUtilidad: number | null;
     roa: number | null;
     roe: number | null;
+    // Endeudamiento
+    deudaTotal: number | null;
+    deudaCapital: number | null;
+    deudaLP: number | null;
 }
 
 export interface FinancialPeriod {
@@ -100,7 +106,7 @@ const PATTERNS: Record<string, RegExp> = {
 
     // ── Cuidado: terrenos solos sin "y edificios" para evitar confusión con "Terrenos y Edificios"
     terrenosEdificios:
-        /terrenos?\s*y\s*edificios?|terrenos?\s*[,y]\s*edificios?|\binmuebles?\b|bienes?\s*inmuebles?|\bpropiedades?\b/i,
+        /terrenos?\s*y\s*(?:edificios?|edificaci[oó]n)|terrenos?\s*[,y]\s*(?:edificios?|edificaci[oó]n)|\binmuebles?\b|bienes?\s*inmuebles?|\bpropiedades?\b/i,
 
     maquinariaEquipo:
         /maquinaria\s*y\s*equipo|\bmaquinaria\b(?!\s*de\s*transporte)|equipo\s*(?:industrial|de\s*producci[oó]n|operativo)/i,
@@ -109,7 +115,7 @@ const PATTERNS: Record<string, RegExp> = {
         /equipo\s*de\s*transporte|veh[íi]culos?(?:\s*de\s*empresa)?|\bflotilla\b/i,
 
     otrosActivos:
-        /\botros?\s*activos?\b(?!\s*no\s*corrientes?|\s*fijos?|\s*de\s*largo)|activos?\s*(?:varios?|diversos?)/i,
+        /\botros?\s*activos?\b(?!\s*no\s*corrientes?|\s*fijos?|\s*de\s*largo)|activos?\s*(?:varios?|diversos?)|activo\s*diferido\b/i,
 
     intangibles:
         /\bintangibles?\b|activos?\s*intangibles?|registro\s*de\s*marca|\bpatentes?\b|\blicencias?\b|\bgoodwill\b|\bmarcas?\b|\bsoftware\b/i,
@@ -125,7 +131,7 @@ const PATTERNS: Record<string, RegExp> = {
         /\bproveedores?\b|cuentas?\s*por\s*pagar(?!\s*diversas?)(?:\s*proveedores?)?|proveedores?\s*nacionales?|acreedores?\s*comerciales?/i,
 
     acreedoresDiversos:
-        /acreedores?\s*div(?:ersos?)?|otros?\s*acreedores?|acreedores?\s*varios?|cuentas?\s*por\s*pagar\s*diversas?/i,
+        /acreedores?\s*div(?:ersos?)?|otros?\s*acreedores?|acreedores?\s*varios?|cuentas?\s*por\s*pagar\s*diversas?|filiales?\s*acreedores?|impuestos?\s*por\s*pagar\b/i,
 
     docsPagarCP:
         /docs?\.?\s*(?:x|por)\s*pagar\s*c\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*corto\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?corto\s*plazo|documentos?\s*comerciales?\s*por\s*pagar|pagar[eé]s?\b|cr[eé]ditos?\s*bancarios?\s*c\.?p\.?\b/i,
@@ -134,7 +140,7 @@ const PATTERNS: Record<string, RegExp> = {
         /\bpasivo\s*(?:largo\s*plazo|a\s*largo\s*plazo|no\s*corriente)\b|pasivos?\s*(?:no\s*corrientes?|largo\s*plazo)|deuda\s*a\s*largo\s*plazo|obligaciones?\s*a\s*largo\s*plazo/i,
 
     docsPagarLP:
-        /docs?\.?\s*(?:x|por)\s*pagar\s*l\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*largo\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?largo\s*plazo|cr[eé]ditos?\s*bancarios?\s*l\.?p\.?\b|pr[eé]stamos?\s*bancarios?\s*l\.?p\.?\b|financiamiento\s*a\s*largo\s*plazo|\bhip[oó]teca\b/i,
+        /docs?\.?\s*(?:x|por)\s*pagar\s*l\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*largo\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?(?:largo\s*plazo|l\.?\/?p\.?)\b|cr[eé]ditos?\s*bancarios?\s*l\.?p\.?\b|pr[eé]stamos?\s*bancarios?\s*l\.?p\.?\b|financiamiento\s*a\s*largo\s*plazo|\bhip[oó]teca\b/i,
 
     otrosPasivos:
         /\botros?\s*pasivos?\b(?!\s*corrientes?|\s*no\s*corrientes?)|pasivos?\s*(?:diversos?|acumulados?)/i,
@@ -147,7 +153,7 @@ const PATTERNS: Record<string, RegExp> = {
         /capital\s*(?:social|suscrito(?:\s*y\s*pagado)?|pagado|aportado|fijo|variable|de\s*los?\s*socios?)|aportaciones?\s*de\s*socios?/i,
 
     utilidadesAnteriores:
-        /ut(?:ilidades?)?\s*(?:de\s*)?ejercicios?\s*(?:anteriores?|anterioes?)|utilidades?\s*(?:acumuladas?|retenidas?|no\s*distribuidas?)|resultados?\s*(?:acumulados?(?:\s*de\s*a[ñn]os?\s*anteriores?)?|de\s*ejercicios?\s*anteriores?)|ganancias?\s*retenidas?|beneficios?\s*acumulados?/i,
+        /ut(?:ilidades?)?\s*(?:de\s*)?ejercicios?\s*(?:anteriores?|anterioes?)|utilidades?\s*(?:acumuladas?|retenidas?|no\s*distribuidas?)|resultados?\s*(?:acumulados?(?:\s*de\s*a[ñn]os?\s*anteriores?)?|de\s*ejercicios?\s*anteriores?|ejercicios?\s*ant(?:eriores?)?\b)|ganancias?\s*retenidas?|beneficios?\s*acumulados?/i,
 
     // Nota: no incluye "capital social" para no chocar con el campo capitalSocial
     capitalContable:
@@ -155,10 +161,10 @@ const PATTERNS: Record<string, RegExp> = {
 
     // ── Estado de Resultados ───────────────────────────────────────────────────
     ventas:
-        /\bventas?\s*netas?\b|\bventas?\s*totales?\b|\bventas?\b(?!\s*(?:de|del)\s*(?:mercanc|producci|costo|administr))|\bingresos?\s*(?:netos?|totales?|por\s*ventas?|operativos?|de\s*operaci[oó]n|de\s*operaciones?)?(?!\s*(?:financieros?|no\s*operativos?|diversos?|extraordinarios?))(?!\s*otros?)|\bfacturaci[oó]n\b/i,
+        /\bventas?\s*netas?\b|\bventas?\s*totales?\b|\bventas?\b(?!\s*(?:de|del)\s*(?:mercanc|producci|costo|administr))|total\s*de\s*ingresos?\b|\bingresos?\s*(?:netos?|totales?|por\s*ventas?|operativos?|de\s*operaci[oó]n|de\s*operaciones?)?(?!\s*(?:financieros?|no\s*operativos?|diversos?|extraordinarios?))(?!\s*otros?)|\bfacturaci[oó]n\b/i,
 
     costoVenta:
-        /costos?\s*(?:de\s*)?(?:venta|ventas?|producci[oó]n|mercanc[íi]a\s*vendida|bienes?\s*vendidos?|productos?\s*vendidos?)|costo\s*directo(?:\s*de\s*ventas?)?/i,
+        /costos?\s*(?:de\s*)?(?:venta|ventas?|producci[oó]n|mercanc[íi]a\s*vendida|bienes?\s*vendidos?|productos?\s*vendidos?)|costo\s*directo(?:\s*de\s*(?:venta|ventas?|producci[oó]n))?/i,
 
     utilidadBruta:
         /ut\.?\s*(?:ilidad)?\s*bruta\b|resultado\s*bruto\b|ganancia\s*bruta\b|margen\s*bruto\b|beneficio\s*bruto\b/i,
@@ -196,16 +202,110 @@ const PATTERNS: Record<string, RegExp> = {
 /**
  * Normaliza líneas del PDF para facilitar el matching de patrones:
  *   1. Separa amounts de porcentajes: "800,00016.00%" → "800,000 16.00% "
- *      También maneja porcentajes de 3 dígitos: "5,000,000100%" → "5,000,000 100% "
  *   2. Añade espacio entre letra y dígito: "Inventarios800,000" → "Inventarios 800,000"
- *      Esto permite que \b funcione correctamente al final de la etiqueta.
  */
 function preprocessText(text: string): string {
-    // 1. Separar monto de porcentaje (1–3 dígitos enteros, decimal opcional)
     let result = text.replace(/(\d{1,3}(?:,\d{3})*)(\d{1,3}(?:\.\d{1,2})?%)/g, "$1 $2 ");
-    // 2. Añadir espacio entre letra final de etiqueta y primer dígito del valor
     result = result.replace(/([a-zA-ZáéíóúÁÉÍÓÚüÜñÑ])(\d)/g, "$1 $2");
     return result;
+}
+
+/**
+ * Detecta PDFs con formato "bloque-etiquetas / bloque-valores" (columnas separadas).
+ * pdftotext extrae primero todas las etiquetas del bloque y luego los valores,
+ * separados por líneas en blanco. Este pre-procesador los empareja posicionalmente:
+ *
+ *   Activo Circulante          →   Activo Circulante $334,002,705.00
+ *   Clientes                   →   Clientes $170,601,800.00
+ *   [blank]
+ *   $334,002,705.00
+ *   $170,601,800.00
+ *
+ * Solo actúa cuando un párrafo de puras etiquetas va seguido de un párrafo de puros montos.
+ */
+function pairLabelsWithValues(text: string): string {
+    const valueLine = /^-?\$?\s*[\d,]+(?:\.\d+)?$/;
+
+    const paragraphs = text.split(/\n[ \t]*\n/).map(p => p.trim()).filter(p => p);
+
+    function isValueParagraph(para: string): boolean {
+        const lines = para.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+        return lines.length > 0 && lines.every(l => valueLine.test(l));
+    }
+
+    function splitLines(para: string): string[] {
+        return para.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+    }
+
+    // Some PDFs place single-line "section total" labels (e.g. "Suma del activo")
+    // BETWEEN a multi-line label block and its value block.  We collect them as
+    // "deferred" labels and pair them with the value paragraphs that follow the
+    // main value block.
+    const consumed = new Set<number>();
+    const result: string[] = [];
+
+    for (let i = 0; i < paragraphs.length; i++) {
+        if (consumed.has(i)) continue;
+        if (isValueParagraph(paragraphs[i])) continue; // orphan value — skip
+
+        const labelLines = splitLines(paragraphs[i]);
+
+        // Collect interstitial single-line non-value paragraphs that appear
+        // immediately before a value block (they are deferred labels).
+        const deferred: { idx: number; line: string }[] = [];
+        let j = i + 1;
+        while (
+            j < paragraphs.length &&
+            !consumed.has(j) &&
+            !isValueParagraph(paragraphs[j])
+        ) {
+            const jLines = splitLines(paragraphs[j]);
+            // Only treat as deferred if it is a single line AND the very next
+            // paragraph is a value block (so pairing is unambiguous).
+            if (
+                jLines.length === 1 &&
+                j + 1 < paragraphs.length &&
+                !consumed.has(j + 1) &&
+                isValueParagraph(paragraphs[j + 1])
+            ) {
+                deferred.push({ idx: j, line: jLines[0] });
+                j++;
+            } else {
+                break;
+            }
+        }
+
+        if (j < paragraphs.length && !consumed.has(j) && isValueParagraph(paragraphs[j])) {
+            // Pair main label block with value block at j
+            const valueLines = splitLines(paragraphs[j]);
+            consumed.add(j);
+            for (const d of deferred) consumed.add(d.idx);
+
+            for (let k = 0; k < Math.max(labelLines.length, valueLines.length); k++) {
+                result.push(`${labelLines[k] ?? ""} ${valueLines[k] ?? ""}`.trim());
+            }
+
+            // Pair each deferred label with the next available value paragraph
+            let vIdx = j + 1;
+            for (const d of deferred) {
+                while (vIdx < paragraphs.length && consumed.has(vIdx)) vIdx++;
+                if (vIdx < paragraphs.length && !consumed.has(vIdx) && isValueParagraph(paragraphs[vIdx])) {
+                    const vLines = splitLines(paragraphs[vIdx]);
+                    consumed.add(vIdx);
+                    for (let k = 0; k < Math.max(1, vLines.length); k++) {
+                        result.push(`${d.line} ${vLines[k] ?? ""}`.trim());
+                    }
+                    vIdx++;
+                } else {
+                    result.push(d.line);
+                }
+            }
+        } else {
+            result.push(...labelLines);
+        }
+    }
+
+    return result.join("\n");
 }
 
 // ─── Extractor de amounts ─────────────────────────────────────────────────────
@@ -222,17 +322,24 @@ function extractAmounts(text: string): number[] {
     const region = stop ? text.slice(0, stop.index) : text;
 
     const found: Array<{ index: number; value: number }> = [];
-
-    // Negativos: (1,234,567)
-    const negRe = /\(\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*\)/g;
     let m: RegExpExecArray | null;
-    while ((m = negRe.exec(region)) !== null) {
+
+    // Negativos en paréntesis: (1,234,567)
+    const negParenRe = /\(\s*(\d{1,3}(?:,\d{3})+|\d{4,})\s*\)/g;
+    while ((m = negParenRe.exec(region)) !== null) {
         const val = parseFloat(m[1].replace(/,/g, ""));
         if (!isNaN(val) && val >= 100) found.push({ index: m.index, value: -val });
     }
 
-    // Positivos: número con comas (miles) o 4+ dígitos, no seguido de % ni )
-    const posRe = /(?<!\()\b(\d{1,3}(?:,\d{3})+|\d{4,})\b(?!\s*%|\.\d+%|\s*\))/g;
+    // Negativos con signo: -$1,234,567 o -1,234,567
+    const negSignRe = /-\s*\$?\s*(\d{1,3}(?:,\d{3})+|\d{4,})/g;
+    while ((m = negSignRe.exec(region)) !== null) {
+        const val = parseFloat(m[1].replace(/,/g, ""));
+        if (!isNaN(val) && val >= 100) found.push({ index: m.index, value: -val });
+    }
+
+    // Positivos: número con comas (miles) o 4+ dígitos, no precedido de - ni (, no seguido de % ni )
+    const posRe = /(?<![-\(])\b(\d{1,3}(?:,\d{3})+|\d{4,})\b(?!\s*%|\.\d+%|\s*\))/g;
     while ((m = posRe.exec(region)) !== null) {
         const val = parseFloat(m[1].replace(/,/g, ""));
         if (!isNaN(val) && val >= 100 && !(val >= 1900 && val <= 2100)) {
@@ -317,7 +424,9 @@ function detectPeriodos(text: string): string[] {
 // ─── Parser Principal ─────────────────────────────────────────────────────────
 
 export function parseFinancialStatement(text: string): ParsedFinancialStatement {
-    const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+    // Pre-procesado: emparejar bloques de etiquetas con bloques de valores separados
+    const paired = pairLabelsWithValues(text);
+    const lines = paired.split(/\r?\n/).filter(l => l.trim().length > 0);
     const periodos = detectPeriodos(text);
     const numPeriods = Math.max(1, periodos.length);
 
@@ -332,13 +441,13 @@ export function parseFinancialStatement(text: string): ParsedFinancialStatement 
     // Build per-period objects
     const periodData: FinancialPeriod[] = periodos.map((periodo, p) => {
         const bg: BalanceGeneral = {
-            // Subtitle totals — always null here, always derived below
-            activoCirculante:    null,
-            activoFijo:          null,
-            pasivoCirculante:    null,
-            pasivoLargoPlazo:    null,
-            capitalContable:     null,
-            // Line-items: from OCR
+            // Totales de sección: usar valor OCR si encontrado, deriveFields completa si null
+            activoCirculante:    all.activoCirculante[p],
+            activoFijo:          all.activoFijo[p],
+            pasivoCirculante:    all.pasivoCirculante[p],
+            pasivoLargoPlazo:    all.pasivoLargoPlazo[p],
+            capitalContable:     null,  // siempre derivado (activo - pasivo)
+            // Partidas individuales: del OCR
             inventarios:         all.inventarios[p],
             clientes:            all.clientes[p],
             deudoresDiversos:    all.deudoresDiversos[p],
@@ -414,15 +523,15 @@ function deriveFields(bg: BalanceGeneral, er: EstadoResultados): void {
     if (er.utilidadNeta === null && er.utilidadAntesImpuestos !== null && er.impuestos !== null)
         er.utilidadNeta = er.utilidadAntesImpuestos - er.impuestos;
 
-    // ── Balance General — Subtítulos siempre derivados (son encabezados sin valor) ──
+    // ── Balance General — Subtítulos: usar OCR si disponible, derivar solo como fallback ──
     // Activo Circulante = Inventarios + Clientes + Deudores Diversos
-    {
+    if (bg.activoCirculante === null) {
         const parts = [bg.inventarios, bg.clientes, bg.deudoresDiversos];
         if (parts.some(v => v !== null))
             bg.activoCirculante = sumKnown(...parts);
     }
     // Activo Fijo = Terrenos + Maquinaria + Equipo Transporte
-    {
+    if (bg.activoFijo === null) {
         const parts = [bg.terrenosEdificios, bg.maquinariaEquipo, bg.equipoTransporte];
         if (parts.some(v => v !== null))
             bg.activoFijo = sumKnown(...parts);
@@ -434,13 +543,13 @@ function deriveFields(bg: BalanceGeneral, er: EstadoResultados): void {
             bg.activoTotal = sumKnown(...parts);
     }
     // Pasivo Circulante = Proveedores + Acreedores + Docs CP
-    {
+    if (bg.pasivoCirculante === null) {
         const parts = [bg.proveedores, bg.acreedoresDiversos, bg.docsPagarCP];
         if (parts.some(v => v !== null))
             bg.pasivoCirculante = sumKnown(...parts);
     }
     // Pasivo Largo Plazo = Docs LP + Otros Pasivos
-    {
+    if (bg.pasivoLargoPlazo === null) {
         const parts = [bg.docsPagarLP, bg.otrosPasivos];
         if (parts.some(v => v !== null))
             bg.pasivoLargoPlazo = sumKnown(...parts);
@@ -465,10 +574,14 @@ function ratio(a: number | null, b: number | null, decimals = 2): number | null 
 
 export function calcularKPIs(bg: BalanceGeneral, er: EstadoResultados): KPIs {
     return {
+        // Liquidez
         liquidezCirculante: ratio(bg.activoCirculante, bg.pasivoCirculante),
+        capitalTrabajo: bg.activoCirculante !== null && bg.pasivoCirculante !== null
+            ? bg.activoCirculante - bg.pasivoCirculante : null,
         pruebaAcido: bg.activoCirculante !== null && bg.inventarios !== null
             ? ratio(bg.activoCirculante - bg.inventarios, bg.pasivoCirculante)
             : null,
+        // Actividad
         rotacionCxC: ratio(er.ventas, bg.clientes),
         rotacionCxP: bg.proveedores !== null && er.costoVenta !== null
             ? ratio(bg.proveedores * 365, er.costoVenta)
@@ -476,14 +589,17 @@ export function calcularKPIs(bg: BalanceGeneral, er: EstadoResultados): KPIs {
         rotacionInventarios: bg.inventarios !== null && er.costoVenta !== null
             ? ratio(bg.inventarios * 365, er.costoVenta)
             : null,
-        deudaTotal:  ratio(bg.pasivoTotal, bg.activoTotal),
+        // Rentabilidad
+        margenOperativo: ratio(er.utilidadBruta, er.ventas),
+        margenUtilidad: ratio(er.utilidadNeta, er.ventas),
+        roa: ratio(er.utilidadNeta, bg.activoTotal),
+        roe: ratio(er.utilidadNeta, bg.capitalContable),
+        // Endeudamiento
+        deudaTotal: ratio(bg.pasivoTotal, bg.activoTotal),
         deudaCapital: ratio(bg.pasivoTotal, bg.capitalContable),
         deudaLP: bg.pasivoLargoPlazo !== null && bg.activoTotal !== null && bg.pasivoTotal !== null
             ? ratio(bg.pasivoLargoPlazo, bg.activoTotal - bg.pasivoTotal)
             : null,
-        margenUtilidad: ratio(er.utilidadNeta, er.ventas),
-        roa: ratio(er.utilidadNeta, bg.activoTotal),
-        roe: ratio(er.utilidadNeta, bg.capitalContable),
     };
 }
 
@@ -508,9 +624,10 @@ function emptyER(): EstadoResultados {
 }
 function emptyKPIs(): KPIs {
     return {
-        liquidezCirculante: null, pruebaAcido: null, rotacionCxC: null, rotacionCxP: null,
-        rotacionInventarios: null, deudaTotal: null, deudaCapital: null, deudaLP: null,
-        margenUtilidad: null, roa: null, roe: null,
+        liquidezCirculante: null, capitalTrabajo: null, pruebaAcido: null,
+        rotacionCxC: null, rotacionCxP: null, rotacionInventarios: null,
+        margenOperativo: null, margenUtilidad: null, roa: null, roe: null,
+        deudaTotal: null, deudaCapital: null, deudaLP: null,
     };
 }
 
