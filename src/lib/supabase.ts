@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getCategoriaDeDoc } from "./documentos-requeridos";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -24,7 +25,9 @@ export async function uploadPDF(
     filename: string
 ): Promise<{ url: string; path: string; size: number }> {
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `${expedienteId}/${docId}/${Date.now()}_${safeName}`;
+    const categoria = getCategoriaDeDoc(docId);
+    // Ruta organizada: {expedienteId}/{categoria}/{docId}/{archivo}
+    const storagePath = `${expedienteId}/${categoria}/${docId}/${safeName}`;
 
     const { data, error } = await supabase.storage
         .from(STORAGE_BUCKET)
@@ -40,4 +43,33 @@ export async function uploadPDF(
         .getPublicUrl(data.path);
 
     return { url: publicUrl, path: data.path, size: buffer.length };
+}
+
+/**
+ * Upload a JSON string to Supabase Storage as a backup of OCR results.
+ * Path: {expedienteId}/{docId}/ocr_{timestamp}.json
+ */
+export async function uploadJSON(
+    content: string,
+    expedienteId: string,
+    docId: string,
+): Promise<{ url: string; path: string }> {
+    const categoria = getCategoriaDeDoc(docId);
+    // Mismo folder que el PDF, archivo OCR resultado
+    const storagePath = `${expedienteId}/${categoria}/${docId}/ocr_resultado.json`;
+
+    const { data, error } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(storagePath, Buffer.from(content, "utf-8"), {
+            contentType: "application/json",
+            upsert: true,
+        });
+
+    if (error) throw new Error(`Supabase Storage (JSON) error: ${error.message}`);
+
+    const { data: { publicUrl } } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(data.path);
+
+    return { url: publicUrl, path: data.path };
 }

@@ -16,6 +16,7 @@ export const SITUACION_COLORS: Record<string, string> = {
     "Observado": "bg-orange-100 text-orange-700",
     "Listo para propuesta": "bg-blue-100 text-blue-700",
     "Cerrado": "bg-gray-100 text-gray-600",
+    "Rechazado": "bg-red-100 text-red-700",
 };
 
 export const ETAPA_COLORS: Record<string, string> = {

@@ -78,6 +78,14 @@ export const TODOS_LOS_DOCUMENTOS: DocumentoRequerido[] =
 /** Total de documentos obligatorios */
 export const TOTAL_DOCUMENTOS_REQUERIDOS = TODOS_LOS_DOCUMENTOS.length;
 
+/** Devuelve el id de categoría al que pertenece un docId */
+export function getCategoriaDeDoc(docId: string): string {
+    for (const cat of CATEGORIAS_DOCUMENTOS) {
+        if (cat.documentos.some(d => d.id === docId)) return cat.id;
+    }
+    return "otros";
+}
+
 /**
  * Dado un array de tipos/nombres de documentos ya entregados (strings),
  * devuelve cuáles IDs del checklist oficial están cubiertos.

@@ -5,13 +5,13 @@ import {
     ArrowLeft, User, FileText, BarChart2, Building2,
     AlertTriangle, ChevronRight, Plus, X, Loader2,
     Download, CheckCircle2, AlertCircle, Table2, Info,
-    UploadCloud, ChevronDown, ChevronUp,
+    UploadCloud, ChevronDown, ChevronUp, Clock, XCircle, Ban,
 } from "lucide-react";
 import {
     ETAPAS_PROCESO, SITUACION_COLORS, ETAPA_COLORS,
     MOCK_DOCUMENTOS, DOC_ESTATUS_COLORS,
-    MOCK_INSTITUCIONES, COMPATIBILIDAD_COLORS,
 } from "@/lib/mock-data";
+import { matchearInstituciones, NIVEL_COLORS, TIPO_COLORS } from "@/lib/instituciones";
 import { CATEGORIAS_DOCUMENTOS, TOTAL_DOCUMENTOS_REQUERIDOS } from "@/lib/documentos-requeridos";
 
 
@@ -34,8 +34,13 @@ type ApiExpediente = {
     observaciones: string;
     alertas: string;        // JSON string "[...]"
     matrizRiesgo: string;   // JSON string "{factorId: opcionId}"
+    fechaConstitucion: string;
     fechaAlta: string;
     ultimaActualizacion: string;
+    folio: number;
+    rechazoMotivo: string;
+    rechazoResponsable: string;
+    rechazoFecha: string;
     documentos?: any[];
     datosFinancieros?: any;
 };
@@ -99,10 +104,10 @@ function CompletitudDesglose({ caso }: { caso: Case }) {
                                 <div className={`h-1 rounded-full ${cat.pct >= 80 ? 'bg-emerald-500' : cat.pct >= 50 ? 'bg-amber-400' : 'bg-red-400'}`} style={{ width: `${cat.pct}%` }} />
                             </div>
                             {cat.camposFaltantes.length > 0 && (
-                                <p className="text-xs text-red-600">❌ Falta: {cat.camposFaltantes.join(', ')}</p>
+                                <p className="text-xs text-red-600">Falta: {cat.camposFaltantes.join(', ')}</p>
                             )}
                             {cat.camposCompletos.length > 0 && (
-                                <p className="text-xs text-emerald-600">✓ {cat.camposCompletos.join(', ')}</p>
+                                <p className="text-xs text-emerald-600">{cat.camposCompletos.join(', ')}</p>
                             )}
                             <p className="text-xs text-gray-400 mt-1 italic">{cat.observacion}</p>
                         </div>
@@ -114,28 +119,6 @@ function CompletitudDesglose({ caso }: { caso: Case }) {
     );
 }
 
-function Stepper({ etapaActual }: { etapaActual: number }) {
-    return (
-        <div className="flex items-start justify-between relative">
-            <div className="absolute top-5 left-0 right-0 h-0.5 bg-gray-200 z-0" />
-            {ETAPAS_PROCESO.map((etapa, i) => {
-                const step = i + 1;
-                const isComplete = step < etapaActual;
-                const isActive = step === etapaActual;
-                return (
-                    <div key={etapa} className="flex flex-col items-center gap-2 z-10 flex-1">
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all ${isActive ? "border-blue-500 bg-white text-blue-600 shadow-md shadow-blue-100"
-                            : isComplete ? "border-blue-500 bg-blue-500 text-white"
-                                : "border-gray-300 bg-white text-gray-400"
-                            }`}>{step}</div>
-                        <span className={`text-xs font-semibold text-center leading-tight max-w-[70px] ${isActive ? "text-blue-600" : isComplete ? "text-blue-500" : "text-gray-400"
-                            }`}>{etapa}</span>
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
 
 // ─── Tab: Resumen ─────────────────────────────────────────────────────────────
 function fmtDate(iso: string) {
@@ -160,6 +143,7 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
         telefono: caso.telefono ?? "",
         montoSolicitado: caso.montoSolicitado ?? "",
         sector: caso.sector ?? "",
+        fechaConstitucion: caso.fechaConstitucion ?? "",
     });
     const [saving, setSaving] = useState(false);
     const [saveMsg, setSaveMsg] = useState("");
@@ -215,12 +199,6 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
                 </div>
             </div>
 
-            {/* Stepper */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-6">Flujo del expediente</p>
-                <Stepper etapaActual={caso.etapa} />
-            </div>
-
             {/* Datos editables */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                 <div className="flex items-center justify-between mb-4">
@@ -230,7 +208,7 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
                     {!editing ? (
                         <button onClick={() => setEditing(true)}
                             className="text-xs text-blue-600 hover:text-blue-700 font-semibold px-3 py-1.5 border border-blue-100 rounded-lg hover:bg-blue-50 transition-all">
-                            ✏️ Editar
+                            Editar
                         </button>
                     ) : (
                         <div className="flex items-center gap-2">
@@ -246,42 +224,34 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
                 {saveMsg && (
                     <p className={`text-xs mb-3 px-3 py-2 rounded-lg ${saveMsg.includes("Error") ? "text-red-600 bg-red-50" : "text-emerald-700 bg-emerald-50"}`}>{saveMsg}</p>
                 )}
-                {editing ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {([
-                            { key: "rfc", label: "RFC", type: "text", placeholder: "XAXX010101000" },
-                            { key: "contacto", label: "Contacto", type: "text", placeholder: "Nombre director" },
-                            { key: "email", label: "Correo", type: "email", placeholder: "contacto@empresa.mx" },
-                            { key: "telefono", label: "Teléfono", type: "text", placeholder: "662 XXX XXXX" },
-                            { key: "montoSolicitado", label: "Monto solicitado", type: "text", placeholder: "$0,000,000" },
-                            { key: "sector", label: "Sector", type: "text", placeholder: "Construcción" },
-                        ] as Array<{ key: keyof typeof editForm; label: string; type: string; placeholder: string }>).map(({ key, label, type, placeholder }) => (
-                            <div key={key}>
-                                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{label}</label>
-                                <input type={type} value={editForm[key]}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {([
+                        { key: "rfc",               label: "RFC",                    type: "text",  placeholder: "XAXX010101000",        view: caso.rfc,               warn: !caso.rfc },
+                        { key: "contacto",          label: "Contacto",               type: "text",  placeholder: "Nombre director",       view: caso.contacto,          warn: false },
+                        { key: "email",             label: "Correo",                 type: "email", placeholder: "contacto@empresa.mx",   view: caso.email,             warn: false },
+                        { key: "telefono",          label: "Teléfono",               type: "text",  placeholder: "662 XXX XXXX",          view: caso.telefono,          warn: false },
+                        { key: "montoSolicitado",   label: "Monto solicitado",       type: "text",  placeholder: "$0,000,000",            view: caso.montoSolicitado,   warn: false },
+                        { key: "sector",            label: "Sector",                 type: "text",  placeholder: "Construcción",          view: caso.sector,            warn: false },
+                        { key: "fechaConstitucion", label: "Fecha de constitución",  type: "date",  placeholder: "",                      view: caso.fechaConstitucion ? fmtDate(caso.fechaConstitucion) : "", warn: !caso.fechaConstitucion },
+                    ] as Array<{ key: keyof typeof editForm; label: string; type: string; placeholder: string; view: string; warn: boolean }>).map(({ key, label, type, placeholder, view, warn }) => (
+                        <div key={key}>
+                            <p className="text-xs text-gray-400 mb-1">{label}</p>
+                            {editing ? (
+                                <input
+                                    type={type}
+                                    value={editForm[key]}
                                     onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
                                     placeholder={placeholder}
-                                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                            </div>
-                        ))}
-                    </div>
-                ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {[
-                            { l: "RFC", v: caso.rfc || "—", warn: !caso.rfc },
-                            { l: "Contacto", v: caso.contacto || "—", warn: false },
-                            { l: "Correo", v: caso.email || "—", warn: false },
-                            { l: "Teléfono", v: caso.telefono || "—", warn: false },
-                            { l: "Sector", v: caso.sector || "—", warn: false },
-                            { l: "Ejecutivo", v: caso.ejecutivo || "—", warn: false },
-                        ].map(({ l, v, warn }) => (
-                            <div key={l}>
-                                <p className="text-xs text-gray-400">{l}</p>
-                                <p className={`text-sm font-semibold ${warn ? "text-red-500 italic" : "text-gray-800"}`}>{v}</p>
-                            </div>
-                        ))}
-                    </div>
-                )}
+                                    className="w-full text-sm font-semibold text-gray-800 bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 pb-0.5"
+                                />
+                            ) : (
+                                <p className={`text-sm font-semibold ${warn ? "text-red-400 italic" : "text-gray-800"}`}>
+                                    {view || "—"}
+                                </p>
+                            )}
+                        </div>
+                    ))}
+                </div>
             </div>
 
         </div>
@@ -335,59 +305,34 @@ function DocUploadPanel({
         if (!f || f.type !== "application/pdf") { setError("Solo archivos PDF."); return; }
         setUploading(true); setError("");
         try {
+            // Un solo viaje de red — el servidor maneja OCR, Supabase y DB
             const formData = new FormData();
             formData.append("pdf", f);
             formData.append("docId", docId);
             formData.append("nombre", f.name);
 
-            if (isBankStatement) {
-                const ocrForm = new FormData();
-                ocrForm.append("pdf", f);
-                const ocrRes = await fetch("/api/process-pdf", { method: "POST", body: ocrForm });
-                const ocrData = await ocrRes.json();
-                if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
+            const res = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "Error al registrar");
 
-                formData.append("estatus", "Procesado");
-                const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
-                const regData = await regRes.json();
-                if (!regRes.ok) throw new Error(regData.error || "Error al registrar");
-
+            const ocr = data.ocrData;
+            if (isBankStatement && ocr) {
                 onSuccess({
                     nombre: f.name, estatus: "Procesado",
-                    url: regData.data?.url,
-                    ingresos: ocrData.data.ingresos_totales,
-                    egresos: ocrData.data.egresos_totales,
-                    periodo: ocrData.data.periodo,
-                    movimientos: ocrData.data.movimientos,
-                    txtContent: ocrData.txtContent,
-                    txtFilename: ocrData.txtFilename,
+                    url: data.data?.url,
+                    ingresos: ocr.ingresos_totales,
+                    egresos: ocr.egresos_totales,
+                    periodo: ocr.periodo,
+                    movimientos: ocr.movimientos,
                 });
-            } else if (isFinancialStatement) {
-                // 1. OCR del estado financiero
-                const ocrForm = new FormData();
-                ocrForm.append("pdf", f);
-                const ocrRes = await fetch("/api/process-financial-statement", { method: "POST", body: ocrForm });
-                const ocrData = await ocrRes.json();
-                if (!ocrRes.ok) throw new Error(ocrData.error || "Error OCR");
-
-                // 2. Registrar en DB y subir a Supabase (incluye datos extraídos)
-                formData.append("estatus", "Procesado");
-                formData.append("datosExtraidos", JSON.stringify(ocrData.data));
-                const regRes = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
-                const regData = await regRes.json();
-                if (!regRes.ok) throw new Error(regData.error || "Error al registrar");
-
+            } else if (isFinancialStatement && ocr) {
                 onSuccess({
                     nombre: f.name, estatus: "Procesado",
-                    url: regData.data?.url,
-                    docDbId: regData.data?.id,
-                    financialData: ocrData.data,
+                    url: data.data?.url,
+                    docDbId: data.data?.id,
+                    financialData: ocr,
                 });
             } else {
-                formData.append("estatus", "Entregado");
-                const res = await fetch(`/api/expedientes/${casoId}/documentos`, { method: "POST", body: formData });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || "Error al registrar");
                 onSuccess({ nombre: f.name, estatus: "Entregado", url: data.data?.url });
             }
         } catch (err: any) { setError(err.message); }
@@ -644,7 +589,7 @@ function FinancialStatementPreview({
             {/* Edit mode bar */}
             {editMode && (
                 <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl">
-                    <span className="text-xs text-blue-700 font-semibold flex-1">✏ Modo edición — modifica los valores directamente</span>
+                    <span className="text-xs text-blue-700 font-semibold flex-1">Modo edición — modifica los valores directamente</span>
                     <button onClick={handleSave} disabled={saving}
                         className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-all disabled:opacity-50">
                         {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
@@ -758,7 +703,7 @@ function FinancialStatementPreview({
 }
 
 // ─── Tab: Documentos ──────────────────────────────────────────────────────────
-function TabDocumentos({ caso }: { caso: Case }) {
+function TabDocumentos({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case) => void }) {
     const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
     const [uploaded, setUploaded] = useState<Record<string, UploadedDocInfo>>({});
     const [toast, setToast] = useState<string | null>(null);
@@ -781,7 +726,13 @@ function TabDocumentos({ caso }: { caso: Case }) {
             const json = await res.json();
             if (json.success) setLocalDocs(json.data as DbDoc[]);
         } catch { /* ignore */ }
-    }, [caso.id]);
+        // Also refresh the parent caso so TabAnalisis sees new datosExtraidos
+        try {
+            const res2 = await fetch(`/api/expedientes/${caso.id}`);
+            const json2 = await res2.json();
+            if (json2.success && onUpdate) onUpdate(json2.data);
+        } catch { /* ignore */ }
+    }, [caso.id, onUpdate]);
 
     const dbDocs = localDocs;
 
@@ -872,7 +823,7 @@ function TabDocumentos({ caso }: { caso: Case }) {
                                                     {isSelected
                                                         ? <span className="text-xs font-semibold flex-shrink-0 text-blue-500">▲ Cerrar</span>
                                                         : entregado
-                                                            ? <span className="text-xs text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">✓ Entregado</span>
+                                                            ? <span className="text-xs text-emerald-600 font-semibold bg-emerald-100 px-2 py-0.5 rounded-full flex-shrink-0">Entregado</span>
                                                             : <span className="text-xs font-semibold flex-shrink-0 text-gray-400">Subir ›</span>
                                                     }
                                                 </button>
@@ -1418,12 +1369,12 @@ function TabAnalisis({ caso }: { caso: Case }) {
         lo: number; hi: number; goodHigh: boolean;
         interpret: (v: number | null) => string;
     };
-    const KPI_GROUPS: { group: string; color: string; textColor: string; kpis: KpiDef[] }[] = [
+    const KPI_GROUPS: { group: string; textColor: string; cols: string; kpis: KpiDef[] }[] = [
         {
-            group: "Liquidez", color: "bg-blue-800", textColor: "text-blue-800",
+            group: "Liquidez", textColor: "text-blue-800", cols: "grid-cols-2",
             kpis: [
                 {
-                    key: "liquidezCirculante", label: "Current Ratio",
+                    key: "liquidezCirculante", label: "Razón corriente",
                     formulaLabel: "Activo Circulante / Pasivo Circulante",
                     getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
                         ? `${n(bg.activoCirculante)} / ${n(bg.pasivoCirculante)}` : null,
@@ -1432,35 +1383,92 @@ function TabAnalisis({ caso }: { caso: Case }) {
                     interpret: (v) => v == null ? "Sin datos" : v >= 2 ? "Liquidez alta" : v >= 1 ? "Liquidez adecuada" : "Liquidez baja",
                 },
                 {
-                    key: "capitalTrabajo", label: "Capital de Trabajo",
-                    formulaLabel: "Activo Circulante − Pasivo Circulante",
-                    getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
-                        ? `${n(bg.activoCirculante)} − ${n(bg.pasivoCirculante)}` : null,
-                    calc: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
-                        ? bg.activoCirculante - bg.pasivoCirculante : null,
-                    fmt: (v) => v != null ? `$${n(v)}` : "—",
-                    lo: 0, hi: Infinity, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v > 0 ? "Capital positivo" : "Capital negativo",
+                    key: "pruebaAcido", label: "Prueba ácida",
+                    formulaLabel: "(AC − Inventarios) / Pasivo Circulante",
+                    getVals: (bg) => bg.activoCirculante != null && bg.inventarios != null && bg.pasivoCirculante != null
+                        ? `(${n(bg.activoCirculante)} − ${n(bg.inventarios)}) / ${n(bg.pasivoCirculante)}` : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 0.5, hi: 1.0, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 1 ? "Liquidez alta" : v >= 0.5 ? "Liquidez adecuada" : "Liquidez baja",
                 },
             ],
         },
         {
-            group: "Rentabilidad", color: "bg-blue-700", textColor: "text-blue-700",
+            group: "Actividad / uso de activos", textColor: "text-blue-800", cols: "grid-cols-3",
             kpis: [
                 {
-                    key: "margenOperativo", label: "Margen Operativo",
-                    formulaLabel: "Utilidad Operativa / Ingresos Totales",
-                    getVals: (_, er) => er.utilidadBruta != null && er.ventas != null
-                        ? `${n(er.utilidadBruta)} / ${n(er.ventas)}` : null,
-                    calc: (_, er) => er.utilidadBruta != null && er.ventas != null && er.ventas !== 0
-                        ? er.utilidadBruta / er.ventas : null,
-                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
-                    lo: 0.10, hi: 0.20, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v >= 0.20 ? "Margen alto" : v >= 0.10 ? "Margen moderado" : "Margen bajo",
+                    key: "rotacionActivos", label: "Rotación de activos",
+                    formulaLabel: "Ventas / Activos Totales",
+                    getVals: (bg, er) => er.ventas != null && bg.activoTotal != null
+                        ? `${n(er.ventas)} / ${n(bg.activoTotal)}` : null,
+                    calc: (bg, er) => er.ventas != null && bg.activoTotal != null && bg.activoTotal !== 0
+                        ? parseFloat((er.ventas / bg.activoTotal).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 0.5, hi: 1.5, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 1.5 ? "Uso eficiente" : v >= 0.5 ? "Uso moderado" : "Uso bajo",
                 },
                 {
-                    key: "margenUtilidad", label: "Margen Neto",
-                    formulaLabel: "Utilidad Neta / Ingresos Totales",
+                    key: "rotacionCxC", label: "Rot. cuentas por cobrar",
+                    formulaLabel: "Ventas / Clientes",
+                    getVals: (bg, er) => er.ventas != null && bg.clientes != null
+                        ? `${n(er.ventas)} / ${n(bg.clientes)}` : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 4, hi: 8, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 8 ? "Cobro ágil" : v >= 4 ? "Cobro normal" : "Cobro lento",
+                },
+                {
+                    key: "rotacionInv", label: "Rotación inventarios",
+                    formulaLabel: "Costo de Venta / Inventarios",
+                    getVals: (bg, er) => er.costoVenta != null && bg.inventarios != null
+                        ? `${n(er.costoVenta)} / ${n(bg.inventarios)}` : null,
+                    calc: (bg, er) => er.costoVenta != null && bg.inventarios != null && bg.inventarios !== 0
+                        ? parseFloat((er.costoVenta / bg.inventarios).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 4, hi: 8, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 8 ? "Rotación alta" : v >= 4 ? "Rotación normal" : "Rotación baja",
+                },
+            ],
+        },
+        {
+            group: "Apalancamiento financiero", textColor: "text-blue-800", cols: "grid-cols-3",
+            kpis: [
+                {
+                    key: "deudaTotal", label: "Razón de endeudamiento",
+                    formulaLabel: "Pasivo Total / Activos Totales",
+                    getVals: (bg) => bg.pasivoTotal != null && bg.activoTotal != null
+                        ? `${n(bg.pasivoTotal)} / ${n(bg.activoTotal)}` : null,
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(1)}%` : "—",
+                    lo: 0.40, hi: 0.60, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 0.40 ? "Endeudamiento bajo" : v <= 0.60 ? "Endeudamiento moderado" : "Endeudamiento alto",
+                },
+                {
+                    key: "deudaCapital", label: "Deuda / Capital",
+                    formulaLabel: "Pasivo Total / Capital Contable",
+                    getVals: (bg) => bg.pasivoTotal != null && bg.capitalContable != null
+                        ? `${n(bg.pasivoTotal)} / ${n(bg.capitalContable)}` : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 0.50, hi: 1.0, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 0.50 ? "Apalancamiento bajo" : v <= 1.0 ? "Apalancamiento moderado" : "Apalancamiento alto",
+                },
+                {
+                    key: "coberturaIntereses", label: "Cobertura de intereses",
+                    formulaLabel: "Utilidad Operativa / Gastos Financieros",
+                    getVals: (_, er) => er.utilidadOperacion != null && er.gastosFinancieros != null
+                        ? `${n(er.utilidadOperacion)} / ${n(er.gastosFinancieros)}` : null,
+                    calc: (_, er) => er.utilidadOperacion != null && er.gastosFinancieros != null && er.gastosFinancieros !== 0
+                        ? parseFloat((er.utilidadOperacion / er.gastosFinancieros).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
+                    lo: 1.5, hi: 3.0, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 3 ? "Cobertura alta" : v >= 1.5 ? "Cobertura adecuada" : "Cobertura baja",
+                },
+            ],
+        },
+        {
+            group: "Rentabilidad", textColor: "text-blue-800", cols: "grid-cols-3",
+            kpis: [
+                {
+                    key: "margenUtilidad", label: "Margen neto",
+                    formulaLabel: "Utilidad Neta / Ventas",
                     getVals: (_, er) => er.utilidadNeta != null && er.ventas != null
                         ? `${n(er.utilidadNeta)} / ${n(er.ventas)}` : null,
                     fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
@@ -1487,29 +1495,6 @@ function TabAnalisis({ caso }: { caso: Case }) {
                 },
             ],
         },
-        {
-            group: "Endeudamiento", color: "bg-blue-600", textColor: "text-blue-600",
-            kpis: [
-                {
-                    key: "deudaTotal", label: "Debt Ratio",
-                    formulaLabel: "Pasivo Total / Activos Totales",
-                    getVals: (bg) => bg.pasivoTotal != null && bg.activoTotal != null
-                        ? `${n(bg.pasivoTotal)} / ${n(bg.activoTotal)}` : null,
-                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
-                    lo: 0.40, hi: 0.60, goodHigh: false,
-                    interpret: (v) => v == null ? "Sin datos" : v <= 0.40 ? "Endeudamiento bajo" : v <= 0.60 ? "Endeudamiento moderado" : "Endeudamiento alto",
-                },
-                {
-                    key: "deudaCapital", label: "Deuda a Capital",
-                    formulaLabel: "Pasivo Total / Capital Contable",
-                    getVals: (bg) => bg.pasivoTotal != null && bg.capitalContable != null
-                        ? `${n(bg.pasivoTotal)} / ${n(bg.capitalContable)}` : null,
-                    fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
-                    lo: 0.50, hi: 1.0, goodHigh: false,
-                    interpret: (v) => v == null ? "Sin datos" : v <= 0.50 ? "Apalancamiento bajo" : v <= 1.0 ? "Apalancamiento moderado" : "Apalancamiento alto",
-                },
-            ],
-        },
     ];
 
     const resClr = resolucion === "Aprobado"
@@ -1519,7 +1504,7 @@ function TabAnalisis({ caso }: { caso: Case }) {
         : { bg: "bg-red-500",     light: "bg-red-50",     border: "border-red-200",     text: "text-red-700",     desc: "text-red-600" };
 
     return (
-        <div className="space-y-3">
+        <div className="space-y-3" style={{ fontSize: "6px" }}>
             {/* ── Indicadores Financieros ─────────────────────────── */}
             <div className="bg-white border border-gray-100 rounded-xl overflow-hidden shadow-sm">
                 <div className="px-4 py-3 bg-blue-800">
@@ -1558,10 +1543,6 @@ function TabAnalisis({ caso }: { caso: Case }) {
                             const lastPd = kpiPeriodData[kpiPeriodData.length - 1] ?? {};
                             const bgData = lastPd.balanceGeneral ?? {};
                             const erData = lastPd.estadoResultados ?? {};
-                            const groupTextCls: Record<string, string> = {
-                                "bg-blue-700": "text-blue-700", "bg-blue-600": "text-blue-600",
-                                "bg-blue-500": "text-blue-500", "bg-blue-800": "text-blue-800",
-                            };
                             const cardAccent: Record<KpiColor, string> = {
                                 green: "border-t-emerald-400", yellow: "border-t-amber-400",
                                 red: "border-t-red-400", gray: "border-t-gray-200",
@@ -1576,10 +1557,10 @@ function TabAnalisis({ caso }: { caso: Case }) {
                                 red: "text-red-500 bg-red-100",
                                 gray: "text-gray-400 bg-gray-100",
                             };
-                            return KPI_GROUPS.map(({ group, color, kpis }) => (
+                            return KPI_GROUPS.map(({ group, textColor, cols, kpis }) => (
                                 <div key={group}>
-                                    <p className={`text-xs font-black uppercase tracking-widest mb-2 ${groupTextCls[color]}`}>{group}</p>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <p className={`text-xs font-black uppercase tracking-widest mb-2 ${textColor}`}>{group}</p>
+                                    <div className={`grid ${cols} gap-2`}>
                                         {kpis.map((kpi) => {
                                             const vals = kpiPeriodData.map((pd: any) => {
                                                 const stored = pd.kpis?.[kpi.key] ?? null;
@@ -1754,89 +1735,401 @@ function TabAnalisis({ caso }: { caso: Case }) {
     );
 }
 
-// ─── Tab: Financiamiento ──────────────────────────────────────────────────────
+/// ─── Tab: Financiamiento ──────────────────────────────────────────────────────
 function TabFinanciamiento({ caso }: { caso: Case }) {
     const [expanded, setExpanded] = useState<string | null>(null);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [filtroTipo, setFiltroTipo] = useState<string>("Todos");
 
-    // Filter by sector and financing type relevant to this case
-    const opciones = MOCK_INSTITUCIONES.filter(inst =>
-        inst.sector.includes(caso.sector) || inst.tipo === caso.tipoFinanciamiento
+    // Obtener solvencia desde el último estado financiero subido
+    const lastFinDoc = [...(caso.documentos ?? [])]
+        .filter((d: any) => d.tipo === "estados-financieros" && d.datosExtraidos)
+        .sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())[0];
+    const lastFinData = lastFinDoc?.datosExtraidos
+        ? (() => { try { return JSON.parse(lastFinDoc.datosExtraidos); } catch { return null; } })()
+        : null;
+    const lastPd = lastFinData?.periodData?.[lastFinData.periodData.length - 1];
+    const utilidadNeta = lastPd?.estadoResultados?.utilidadNeta ?? null;
+    const solvencia: "Utilidad" | "Pérdida" | "Quiebra Técnica" | null =
+        utilidadNeta === null ? null :
+        utilidadNeta > 0 ? "Utilidad" : "Pérdida";
+
+    const resultados = matchearInstituciones(
+        { sector: caso.sector, tipoFinanciamiento: caso.tipoFinanciamiento, fechaConstitucion: caso.fechaConstitucion, fechaAlta: caso.fechaAlta },
+        solvencia,
     );
 
+    const tipos = ["Todos", ...Array.from(new Set(resultados.map(r => r.institucion.tipo)))];
+    const filtrados = filtroTipo === "Todos" ? resultados : resultados.filter(r => r.institucion.tipo === filtroTipo);
+
+    const toggleSelect = (id: string) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const PILAR_LABEL = ["Producto", "Sector", "Experiencia", "Solvencia"];
+
     return (
-        <div className="space-y-5">
-            {/* Disclaimer */}
-            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl px-5 py-4 flex items-start gap-3">
-                <Info className="w-5 h-5 text-indigo-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-indigo-700">
-                    Las opciones mostradas son <strong>recomendaciones basadas en el perfil de {caso.cliente}</strong>. Nexus Pontifex actúa como intermediario. Los montos, plazos y tasas son estimados sujetos a validación.
-                </p>
+        <div className="space-y-4">
+            {/* Header con resumen del perfil */}
+            <div className="bg-blue-800 rounded-2xl px-5 py-4">
+                <p className="text-sm font-black text-white mb-3 uppercase tracking-wide">Perfil del Solicitante</p>
+                <div className="grid grid-cols-3 gap-2">
+                    <div>
+                        <p className="text-white/50 text-xs mb-0.5">Sector</p>
+                        <p className="text-white font-semibold text-xs">{caso.sector || "—"}</p>
+                    </div>
+                    <div>
+                        <p className="text-white/50 text-xs mb-0.5">Financiamiento</p>
+                        <p className="text-white font-semibold text-xs">{caso.tipoFinanciamiento || "—"}</p>
+                    </div>
+                    <div>
+                        <p className="text-white/50 text-xs mb-0.5">Solvencia</p>
+                        <p className={`font-semibold text-xs ${solvencia === "Utilidad" ? "text-emerald-300" : solvencia === "Pérdida" ? "text-red-300" : "text-white/40 italic"}`}>
+                            {solvencia ?? "Sin estados financieros"}
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            {/* Options table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                    <p className="text-sm font-semibold text-gray-700">{opciones.length} opciones compatibles con el perfil del expediente</p>
+            {/* Filtros + contador */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex gap-1.5 flex-wrap">
+                    {tipos.map(t => (
+                        <button key={t} onClick={() => setFiltroTipo(t)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${filtroTipo === t ? "bg-blue-800 text-white border-blue-800" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}>
+                            {t}
+                        </button>
+                    ))}
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-gray-50">
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Institución</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Producto</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Monto hasta</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tasa est.</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Compatibilidad</th>
-                                <th className="px-5 py-3" />
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-50">
-                            {opciones.length === 0 && (
-                                <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400 text-sm">Sin opciones compatibles para el sector y tipo de este expediente.</td></tr>
-                            )}
-                            {opciones.map(inst => (
-                                <React.Fragment key={inst.id}>
-                                    <tr className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setExpanded(expanded === inst.id ? null : inst.id)}>
-                                        <td className="px-5 py-4 font-semibold text-gray-900 whitespace-nowrap">{inst.institucion}</td>
-                                        <td className="px-5 py-4 text-gray-700">{inst.producto}</td>
-                                        <td className="px-5 py-4 font-semibold text-gray-800 whitespace-nowrap">{inst.montoMax}</td>
-                                        <td className="px-5 py-4 font-semibold text-indigo-600 whitespace-nowrap">{inst.tasa}</td>
-                                        <td className="px-5 py-4">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${COMPATIBILIDAD_COLORS[inst.compatibilidad]}`}>
-                                                <span>{COMPATIBILIDAD_ICONS[inst.compatibilidad]}</span>{inst.compatibilidad}
-                                            </span>
-                                        </td>
-                                        <td className="px-5 py-4">
-                                            <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${expanded === inst.id ? "rotate-180" : ""}`} />
-                                        </td>
-                                    </tr>
-                                    {expanded === inst.id && (
-                                        <tr className="bg-indigo-50/40">
-                                            <td colSpan={6} className="px-7 py-4">
-                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                    <div>
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Requisitos</p>
-                                                        <p className="text-sm text-gray-700">{inst.requisitos}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Plazo estimado</p>
-                                                        <p className="text-sm text-gray-700">{inst.plazo}</p>
-                                                    </div>
-                                                    <div>
-                                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1">Observaciones</p>
-                                                        <p className="text-sm text-gray-700">{inst.observaciones}</p>
-                                                    </div>
+                <span className="text-xs text-gray-400 font-medium">
+                    {filtrados.length} opciones · {selectedIds.size} seleccionadas
+                </span>
+            </div>
+
+            {/* Lista de instituciones */}
+            <div className="space-y-2">
+                {filtrados.length === 0 && (
+                    <div className="bg-white rounded-xl border border-gray-100 px-6 py-10 text-center text-gray-400 text-sm">
+                        Sin opciones compatibles con el perfil del expediente.
+                    </div>
+                )}
+                {filtrados.map(({ institucion: inst, score, nivel, pilares }) => {
+                    const isSelected = selectedIds.has(inst.id);
+                    const isExpanded = expanded === inst.id;
+                    const pilarValues = [pilares.producto, pilares.sector, pilares.experiencia, pilares.solvencia];
+                    return (
+                        <div key={inst.id} className={`bg-white rounded-xl border transition-all ${isSelected ? "border-blue-400 shadow-sm shadow-blue-100" : "border-gray-100"}`}>
+                            {/* Fila principal */}
+                            <div className="flex items-center gap-3 px-4 py-3">
+                                {/* Checkbox selección */}
+                                <button onClick={() => toggleSelect(inst.id)}
+                                    className={`w-5 h-5 rounded border-2 flex-shrink-0 flex items-center justify-center transition-all ${isSelected ? "bg-blue-600 border-blue-600" : "border-gray-300 hover:border-blue-400"}`}>
+                                    {isSelected && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>}
+                                </button>
+
+                                {/* Nombre + tipo */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-gray-900">{inst.nombre}</span>
+                                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded ${TIPO_COLORS[inst.tipo]}`}>{inst.tipo}</span>
+                                        {inst.masRentable && <span className="text-xs font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">Rentable</span>}
+                                    </div>
+                                    <div className="flex gap-1.5 mt-1 flex-wrap">
+                                        {inst.productos.map(p => (
+                                            <span key={p} className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded border border-gray-100">{p}</span>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Pilares */}
+                                <div className="hidden sm:flex gap-1 flex-shrink-0">
+                                    {PILAR_LABEL.map((label, i) => {
+                                        const val = pilarValues[i];
+                                        return (
+                                            <div key={label} title={label}
+                                                className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black ${val === true ? "bg-emerald-100 text-emerald-600" : val === false ? "bg-red-100 text-red-500" : "bg-gray-100 text-gray-400"}`}>
+                                                {val === true ? "✓" : val === false ? "✕" : "?"}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+
+                                {/* Score + nivel */}
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                    <div className="text-right">
+                                        <div className="text-lg font-black text-gray-900">{score}</div>
+                                        <div className="text-xs text-gray-400">/ 100</div>
+                                    </div>
+                                    <span className={`text-xs font-bold px-2 py-1 rounded-lg border ${NIVEL_COLORS[nivel]}`}>{nivel}</span>
+                                </div>
+
+                                {/* Expandir */}
+                                <button onClick={() => setExpanded(isExpanded ? null : inst.id)} className="flex-shrink-0">
+                                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                                </button>
+                            </div>
+
+                            {/* Detalle expandido */}
+                            {isExpanded && (
+                                <div className="px-4 pb-4 pt-0 border-t border-gray-50">
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+                                        {PILAR_LABEL.map((label, i) => {
+                                            const val = pilarValues[i];
+                                            return (
+                                                <div key={label} className={`rounded-lg px-3 py-2 border ${val === true ? "bg-emerald-50 border-emerald-200" : val === false ? "bg-red-50 border-red-200" : "bg-gray-50 border-gray-200"}`}>
+                                                    <p className="text-xs text-gray-500 font-semibold mb-0.5">{label}</p>
+                                                    <p className={`text-xs font-bold ${val === true ? "text-emerald-600" : val === false ? "text-red-500" : "text-gray-400"}`}>
+                                                        {val === true ? "Cumple" : val === false ? "No cumple" : "Sin datos"}
+                                                    </p>
                                                 </div>
-                                                <p className="text-xs text-indigo-500 italic mt-3">⚠ Sujeto a validación por parte de la institución financiera.</p>
-                                            </td>
-                                        </tr>
-                                    )}
-                                </React.Fragment>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="mt-3 flex flex-wrap gap-1.5">
+                                        <span className="text-xs text-gray-400 font-semibold">Sectores:</span>
+                                        {inst.sectores.map(s => <span key={s} className="text-xs bg-gray-50 border border-gray-100 px-1.5 py-0.5 rounded text-gray-600">{s}</span>)}
+                                        <span className="text-xs text-gray-400 font-semibold ml-2">Buró:</span>
+                                        {inst.buroAceptado.map(b => <span key={b} className="text-xs bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded text-blue-600">{b}</span>)}
+                                        <span className="text-xs text-gray-400 font-semibold ml-2">Garantías:</span>
+                                        {inst.garantias.map(g => <span key={g} className="text-xs bg-purple-50 border border-purple-100 px-1.5 py-0.5 rounded text-purple-600">{g}</span>)}
+                                    </div>
+                                    <p className="text-xs text-gray-400 italic mt-2">Sujeto a validación por parte de la institución financiera.</p>
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Barra de acciones si hay seleccionadas */}
+            {selectedIds.size > 0 && (
+                <div className="sticky bottom-4 bg-blue-800 rounded-2xl px-5 py-3 flex items-center justify-between gap-3 shadow-lg">
+                    <p className="text-sm font-semibold text-white">{selectedIds.size} institución{selectedIds.size > 1 ? "es" : ""} seleccionada{selectedIds.size > 1 ? "s" : ""}</p>
+                    <div className="flex gap-2">
+                        <button onClick={() => setSelectedIds(new Set())} className="text-xs px-3 py-1.5 bg-white/20 hover:bg-white/30 text-white rounded-lg font-semibold">
+                            Limpiar
+                        </button>
+                        <button
+                            onClick={() => window.open(`/propuesta/${caso.id}`, "_blank")}
+                            className="text-xs px-3 py-1.5 bg-white text-blue-800 rounded-lg font-bold hover:bg-blue-50">
+                            Generar propuesta →
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─── Modal: Rechazar Caso ─────────────────────────────────────────────────────
+const MOTIVOS_RECHAZO = [
+    "Buró de crédito con historial negativo",
+    "Documentación incompleta o inconsistente",
+    "Capacidad de pago insuficiente",
+    "Sector o perfil fuera de política",
+    "Ratio de endeudamiento fuera de rango",
+    "Sin garantías suficientes",
+    "Evaluación de riesgo por debajo del mínimo",
+    "Otro",
+];
+
+function RechazoModal({ caso, onClose, onRechazado }: { caso: Case; onClose: () => void; onRechazado: (updated: Case) => void }) {
+    const [motivo, setMotivo] = useState("");
+    const [motivoCustom, setMotivoCustom] = useState("");
+    const [responsable, setResponsable] = useState(EJECUTIVOS[0]);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState("");
+
+    const motivoFinal = motivo === "Otro" ? motivoCustom : motivo;
+
+    const handleSubmit = async () => {
+        if (!motivoFinal.trim()) { setError("Selecciona o escribe el motivo de rechazo."); return; }
+        setSaving(true); setError("");
+        try {
+            const res = await fetch(`/api/expedientes/${caso.id}/rechazar`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ motivo: motivoFinal, responsable }),
+            });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error || "Error al rechazar el caso");
+            onRechazado(json.data);
+            onClose();
+        } catch (err: any) {
+            setError(err.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                    <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center">
+                            <Ban className="w-5 h-5 text-red-600" />
+                        </div>
+                        <div>
+                            <h2 className="text-base font-bold text-gray-900">Rechazar caso</h2>
+                            <p className="text-xs text-gray-400">{caso.cliente}</p>
+                        </div>
+                    </div>
+                    <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-100 text-gray-400"><X className="w-4 h-4" /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Motivo de rechazo *</label>
+                        <div className="space-y-1.5">
+                            {MOTIVOS_RECHAZO.map(m => (
+                                <button key={m} onClick={() => setMotivo(m)}
+                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm border transition-all ${motivo === m ? "bg-red-50 border-red-300 text-red-800 font-semibold" : "border-gray-200 text-gray-700 hover:border-red-200 hover:bg-red-50/40"}`}>
+                                    {m}
+                                </button>
                             ))}
-                        </tbody>
-                    </table>
+                        </div>
+                        {motivo === "Otro" && (
+                            <textarea
+                                value={motivoCustom}
+                                onChange={e => setMotivoCustom(e.target.value)}
+                                rows={2}
+                                placeholder="Describe el motivo..."
+                                className="mt-2 w-full px-3 py-2 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                            />
+                        )}
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Responsable de la decisión</label>
+                        <select value={responsable} onChange={e => setResponsable(e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-red-400">
+                            {EJECUTIVOS.map(j => <option key={j}>{j}</option>)}
+                        </select>
+                    </div>
+                    {error && (
+                        <div className="p-3 bg-red-50 border border-red-100 text-red-700 text-xs rounded-xl flex items-center gap-2">
+                            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{error}
+                        </div>
+                    )}
+                    <div className="flex gap-3 pt-1">
+                        <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50">
+                            Cancelar
+                        </button>
+                        <button onClick={handleSubmit} disabled={saving}
+                            className="flex-1 px-4 py-2.5 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl disabled:opacity-50 flex items-center justify-center gap-2">
+                            {saving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Guardando…</> : <><Ban className="w-3.5 h-3.5" />Confirmar rechazo</>}
+                        </button>
+                    </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ─── Tab: Historial de Actividad ──────────────────────────────────────────────
+const TIPO_ICONS: Record<string, { icon: React.ReactNode; color: string }> = {
+    "campo_actualizado": { icon: <CheckCircle2 className="w-3.5 h-3.5" />, color: "bg-blue-100 text-blue-600" },
+    "rechazado": { icon: <Ban className="w-3.5 h-3.5" />, color: "bg-red-100 text-red-600" },
+    "propuesta": { icon: <FileText className="w-3.5 h-3.5" />, color: "bg-green-100 text-green-600" },
+    "creado": { icon: <Plus className="w-3.5 h-3.5" />, color: "bg-purple-100 text-purple-600" },
+    "documento": { icon: <UploadCloud className="w-3.5 h-3.5" />, color: "bg-amber-100 text-amber-600" },
+};
+
+function TabHistorial({ caso }: { caso: Case }) {
+    const [logs, setLogs] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        fetch(`/api/expedientes/${caso.id}/actividad`)
+            .then(r => r.json())
+            .then(j => { if (j.success) setLogs(j.data); })
+            .finally(() => setLoading(false));
+    }, [caso.id]);
+
+    function fmtTs(iso: string) {
+        try {
+            const d = new Date(iso);
+            return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short", year: "numeric" })
+                + " " + d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+        } catch { return iso; }
+    }
+
+    return (
+        <div className="space-y-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-4">
+                    <Clock className="w-4 h-4 text-blue-600" />
+                    <h3 className="text-sm font-bold text-gray-800">Historial de actividad</h3>
+                    <span className="ml-auto text-xs text-gray-400">{logs.length} evento{logs.length !== 1 ? "s" : ""}</span>
+                </div>
+
+                {loading ? (
+                    <div className="flex items-center justify-center py-8 gap-2 text-gray-400 text-sm">
+                        <Loader2 className="w-4 h-4 animate-spin" />Cargando historial…
+                    </div>
+                ) : logs.length === 0 ? (
+                    <div className="py-10 text-center">
+                        <Clock className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                        <p className="text-sm text-gray-400">Sin actividad registrada aún.</p>
+                        <p className="text-xs text-gray-300 mt-1">Los cambios a partir de ahora quedarán registrados aquí.</p>
+                    </div>
+                ) : (
+                    <div className="relative">
+                        {/* Timeline line */}
+                        <div className="absolute left-4 top-0 bottom-0 w-px bg-gray-100" />
+                        <div className="space-y-3">
+                            {logs.map((log, i) => {
+                                const style = TIPO_ICONS[log.tipo] ?? { icon: <Clock className="w-3.5 h-3.5" />, color: "bg-gray-100 text-gray-500" };
+                                return (
+                                    <div key={log.id} className="flex gap-4 relative">
+                                        <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${style.color}`}>
+                                            {style.icon}
+                                        </div>
+                                        <div className="flex-1 bg-gray-50 rounded-xl px-4 py-3 min-w-0">
+                                            <div className="flex items-start justify-between gap-2">
+                                                <p className="text-sm text-gray-700 leading-snug">{log.descripcion}</p>
+                                                <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">{fmtTs(log.creadoEn)}</span>
+                                            </div>
+                                            {log.usuario && log.usuario !== "Sistema" && (
+                                                <p className="text-xs text-gray-400 mt-1">Por: <span className="font-semibold text-gray-500">{log.usuario}</span></p>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Rechazo info si aplica */}
+            {caso.situacion === "Rechazado" && caso.rechazoMotivo && (
+                <div className="bg-red-50 border border-red-100 rounded-2xl p-5">
+                    <div className="flex items-center gap-2 mb-3">
+                        <Ban className="w-4 h-4 text-red-600" />
+                        <h3 className="text-sm font-bold text-red-800">Caso Rechazado</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <div>
+                            <p className="text-xs text-red-400 font-semibold uppercase tracking-wide mb-1">Motivo</p>
+                            <p className="text-sm text-red-800 font-medium">{caso.rechazoMotivo}</p>
+                        </div>
+                        <div>
+                            <p className="text-xs text-red-400 font-semibold uppercase tracking-wide mb-1">Responsable</p>
+                            <p className="text-sm text-red-800 font-medium">{caso.rechazoResponsable}</p>
+                        </div>
+                        {caso.rechazoFecha && (
+                            <div className="col-span-2">
+                                <p className="text-xs text-red-400 font-semibold uppercase tracking-wide mb-1">Fecha</p>
+                                <p className="text-sm text-red-800 font-medium">{fmtDate(caso.rechazoFecha)}</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
@@ -1847,21 +2140,46 @@ const TABS = [
     { id: "documentos", label: "Documentos", icon: FileText },
     { id: "analisis", label: "Análisis", icon: BarChart2 },
     { id: "financiamiento", label: "Financiamiento", icon: Building2 },
+    { id: "historial", label: "Historial", icon: Clock },
 ];
 
 function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void; onUpdate?: (updated: Case) => void }) {
     const [activeTab, setActiveTab] = useState("resumen");
+    const [showRechazo, setShowRechazo] = useState(false);
 
     return (
         <div>
-            {/* Breadcrumb */}
-            <div className="flex items-center gap-2 mb-6">
-                <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-blue-600 transition-colors font-medium">
-                    <ArrowLeft className="w-4 h-4" />Casos
-                </button>
-                <ChevronRight className="w-3 h-3 text-gray-300" />
-                <span className="text-sm text-gray-700 font-medium">{caso.cliente}</span>
-                <span className="text-sm text-gray-400 font-mono">· {caso.id}</span>
+            {showRechazo && (
+                <RechazoModal
+                    caso={caso}
+                    onClose={() => setShowRechazo(false)}
+                    onRechazado={updated => { onUpdate?.(updated); setShowRechazo(false); }}
+                />
+            )}
+
+            {/* Breadcrumb + acciones */}
+            <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
+                <div className="flex items-center gap-2">
+                    <button onClick={onBack} className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-blue-600 transition-colors font-medium">
+                        <ArrowLeft className="w-4 h-4" />Casos
+                    </button>
+                    <ChevronRight className="w-3 h-3 text-gray-300" />
+                    <span className="text-sm text-gray-700 font-medium">{caso.cliente}</span>
+                    <span className="text-sm text-gray-400 font-mono">· {caso.folio}</span>
+                </div>
+                {caso.situacion !== "Rechazado" && caso.situacion !== "Cerrado" && (
+                    <button
+                        onClick={() => setShowRechazo(true)}
+                        className="flex items-center gap-1.5 text-xs font-semibold text-red-600 border border-red-200 bg-white px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+                    >
+                        <XCircle className="w-3.5 h-3.5" />Rechazar caso
+                    </button>
+                )}
+                {caso.situacion === "Rechazado" && (
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-red-700 bg-red-100 px-3 py-1.5 rounded-lg">
+                        <Ban className="w-3.5 h-3.5" />Caso rechazado
+                    </span>
+                )}
             </div>
 
             {/* Tab bar */}
@@ -1882,9 +2200,10 @@ function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void
 
             {/* Tab content */}
             {activeTab === "resumen" && <TabResumen caso={caso} onUpdate={onUpdate} />}
-            {activeTab === "documentos" && <TabDocumentos caso={caso} />}
+            {activeTab === "documentos" && <TabDocumentos caso={caso} onUpdate={onUpdate} />}
             {activeTab === "analisis" && <TabAnalisis caso={caso} />}
             {activeTab === "financiamiento" && <TabFinanciamiento caso={caso} />}
+            {activeTab === "historial" && <TabHistorial caso={caso} />}
         </div>
     );
 }
@@ -1912,6 +2231,7 @@ function NuevoExpedienteModal({ onClose, onCreated }: { onClose: () => void; onC
         cliente: "", rfc: "", contacto: "", email: "", telefono: "",
         ejecutivo: EJECUTIVOS[0], tipoFinanciamiento: TIPOS_FIN[0],
         montoSolicitado: "", sector: SECTORES[0], observaciones: "",
+        fechaConstitucion: "",
     });
 
     const [saving, setSaving] = useState(false);
@@ -1986,6 +2306,9 @@ function NuevoExpedienteModal({ onClose, onCreated }: { onClose: () => void; onC
                         <Field label="Monto solicitado">
                             <input value={form.montoSolicitado} onChange={e => set("montoSolicitado", e.target.value)} placeholder="$0,000,000" className={inputCls} />
                         </Field>
+                        <Field label="Fecha de constitución">
+                            <input type="date" value={form.fechaConstitucion} onChange={e => set("fechaConstitucion", e.target.value)} className={inputCls} />
+                        </Field>
                     </div>
                     <Field label="Observaciones iniciales">
                         <textarea value={form.observaciones} onChange={e => set("observaciones", e.target.value)}
@@ -2013,7 +2336,7 @@ function NuevoExpedienteModal({ onClose, onCreated }: { onClose: () => void; onC
 }
 
 // ─── Cases List ───────────────────────────────────────────────────────────────
-const SITUACION_OPTS = ["Todas", "En curso", "Requiere revisión", "Observado", "Listo para propuesta", "Cerrado"];
+const SITUACION_OPTS = ["Todas", "En curso", "Requiere revisión", "Observado", "Listo para propuesta", "Cerrado", "Rechazado"];
 const ETAPA_OPTS = ["Todas", ...ETAPAS_PROCESO];
 
 export default function CasosPage() {
@@ -2072,39 +2395,46 @@ export default function CasosPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-center">
-                <input type="text" placeholder="Buscar por razón social o ID…" value={search} onChange={e => setSearch(e.target.value)}
-                    className="px-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64" />
-                <select value={filterSituacion} onChange={e => setFilterSituacion(e.target.value)}
-                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {SITUACION_OPTS.map(o => <option key={o}>{o}</option>)}
-                </select>
-                <select value={filterEtapa} onChange={e => setFilterEtapa(e.target.value)}
-                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    {ETAPA_OPTS.map(o => <option key={o}>{o}</option>)}
-                </select>
-                {(filterSituacion !== "Todas" || filterEtapa !== "Todas" || search) && (
-                    <button onClick={() => { setFilterSituacion("Todas"); setFilterEtapa("Todas"); setSearch(""); }}
-                        className="text-xs text-gray-400 hover:text-gray-600 underline">Limpiar</button>
-                )}
-                <span className="ml-auto text-xs text-gray-400">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 space-y-3">
+                <div className="flex flex-wrap gap-3 items-center">
+                    <input type="text" placeholder="Buscar por razón social o ID…" value={search} onChange={e => setSearch(e.target.value)}
+                        className="px-4 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 w-64" />
+                    <select value={filterEtapa} onChange={e => setFilterEtapa(e.target.value)}
+                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-gray-50 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        {ETAPA_OPTS.map(o => <option key={o}>{o}</option>)}
+                    </select>
+                    {(filterSituacion !== "Todas" || filterEtapa !== "Todas" || search) && (
+                        <button onClick={() => { setFilterSituacion("Todas"); setFilterEtapa("Todas"); setSearch(""); }}
+                            className="text-xs text-gray-400 hover:text-gray-600 underline">Limpiar</button>
+                    )}
+                    <span className="ml-auto text-xs text-gray-400">{filtered.length} resultado{filtered.length !== 1 ? "s" : ""}</span>
+                </div>
+                {/* Filtro por estado */}
+                <div className="flex gap-1.5 flex-wrap">
+                    {SITUACION_OPTS.map(o => (
+                        <button key={o} onClick={() => setFilterSituacion(o)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${filterSituacion === o ? "bg-blue-800 text-white border-blue-800" : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"}`}>
+                            {o}
+                        </button>
+                    ))}
+                </div>
             </div>
 
             {/* Table */}
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden" style={{ fontSize: "16px" }}>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="bg-gray-50 border-b border-gray-100">
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">ID</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Razón social</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Ejecutivo</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo de financiamiento</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Etapa actual</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Situación</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Completitud</th>
-                                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Alta</th>
-                                <th className="px-5 py-3" />
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">ID</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Razón social</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Ejecutivo</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Tipo de financiamiento</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Etapa actual</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Situación</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Completitud</th>
+                                <th className="text-left px-3 py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wider">Alta</th>
+                                <th className="px-3 py-2.5" />
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -2131,28 +2461,28 @@ export default function CasosPage() {
                             )}
                             {!loading && !loadError && filtered.map(caso => (
                                 <tr key={caso.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setSelectedCase(caso)}>
-                                    <td className="px-5 py-4 font-mono text-xs text-gray-500 font-semibold whitespace-nowrap">{caso.id}</td>
-                                    <td className="px-5 py-4">
+                                    <td className="px-3 py-3 font-mono text-xs text-gray-500 font-semibold whitespace-nowrap">{caso.folio}</td>
+                                    <td className="px-3 py-3">
                                         <div className="font-semibold text-gray-900 max-w-[180px] truncate">{caso.cliente}</div>
                                         <div className="text-xs text-gray-400">{caso.sector}</div>
                                     </td>
-                                    <td className="px-5 py-4 text-gray-600 whitespace-nowrap">{caso.ejecutivo}</td>
-                                    <td className="px-5 py-4 text-xs text-gray-500 max-w-[130px]">
+                                    <td className="px-3 py-3 text-gray-600 whitespace-nowrap">{caso.ejecutivo}</td>
+                                    <td className="px-3 py-3 text-xs text-gray-500 max-w-[130px]">
                                         <div className="truncate">{caso.tipoFinanciamiento}</div>
                                     </td>
-                                    <td className="px-5 py-4">
+                                    <td className="px-3 py-3">
                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${ETAPA_COLORS[caso.etapaNombre]}`}>
                                             {caso.etapaNombre}
                                         </span>
                                     </td>
-                                    <td className="px-5 py-4">
+                                    <td className="px-3 py-3">
                                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${SITUACION_COLORS[caso.situacion]}`}>
                                             {caso.situacion}
                                         </span>
                                     </td>
-                                    <td className="px-5 py-4 min-w-[120px]"><CompletitudBar value={caso.completitud} /></td>
-                                    <td className="px-5 py-4 text-gray-400 text-xs whitespace-nowrap">{caso.fechaAlta}</td>
-                                    <td className="px-5 py-4">
+                                    <td className="px-3 py-3 min-w-[100px]"><CompletitudBar value={caso.completitud} /></td>
+                                    <td className="px-3 py-3 text-gray-400 text-xs whitespace-nowrap">{caso.fechaAlta}</td>
+                                    <td className="px-3 py-3">
                                         <button onClick={e => { e.stopPropagation(); setSelectedCase(caso); }}
                                             className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors whitespace-nowrap">
                                             Ver expediente

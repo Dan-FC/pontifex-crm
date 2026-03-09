@@ -1,21 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calcularCompletitud } from "@/lib/completitud";
-import { uploadPDF } from "@/lib/supabase";
+import { uploadPDF, uploadJSON } from "@/lib/supabase";
+import { extractTextFromFinancialPDF, parseFinancialStatement } from "@/lib/financial-statement-parser";
+import { extractTextFromPDF, parseBankStatementData, generateTxtReport } from "@/lib/pdf-parser";
+import path from "path";
+import fs from "fs/promises";
+
+const STORAGE_DIR = path.join(process.cwd(), "storage");
 
 // ── POST /api/expedientes/[id]/documentos ────────────────────────────────────
-// Recibe un PDF via FormData, lo sube a Supabase Storage y crea el Documento.
-// FormData fields:
-//   pdf   : File  — el archivo PDF
-//   docId : string — ID del checklist (ej. "acta-constitutiva")
-//   nombre: string — nombre legible del documento
+// Recibe un PDF via FormData, lo sube a Supabase Storage, corre OCR si aplica,
+// guarda el resultado en DB y en Supabase Storage (JSON). No recalcula si ya
+// existe datosExtraidos en el registro.
 export async function POST(
     request: Request,
     { params }: { params: Promise<{ id: string }> }
 ) {
     const { id: expedienteId } = await params;
     try {
-        // Support both FormData (with file) and JSON (metadata only)
         const contentType = request.headers.get("content-type") ?? "";
         let tipo = "";
         let nombre = "";
@@ -23,14 +26,18 @@ export async function POST(
         let fileUrl: string | undefined;
         let fileSize: number | undefined;
         let datosExtraidos: string | undefined;
+        let buffer: Buffer | undefined;
+        let originalName = "";
+        let ocrData: any = null;
 
         if (contentType.includes("multipart/form-data")) {
             const formData = await request.formData();
             const file = formData.get("pdf") as File | null;
-            tipo = formData.get("docId") as string ?? formData.get("tipo") as string ?? "";
+            tipo = (formData.get("docId") as string) ?? (formData.get("tipo") as string) ?? "";
             nombre = (formData.get("nombre") as string) ?? (file?.name ?? "");
             estatus = (formData.get("estatus") as string) ?? "Entregado";
-            datosExtraidos = (formData.get("datosExtraidos") as string) ?? undefined;
+            // datosExtraidos puede venir del cliente (legacy) o lo calculamos aquí
+            const clientDatos = formData.get("datosExtraidos") as string | null;
 
             if (!tipo || !nombre) {
                 return NextResponse.json(
@@ -40,10 +47,56 @@ export async function POST(
             }
 
             if (file && file.size > 0) {
-                const buffer = Buffer.from(await file.arrayBuffer());
+                buffer = Buffer.from(await file.arrayBuffer());
+                originalName = file.name;
+
+                // 1. Subir PDF a Supabase Storage
                 const result = await uploadPDF(buffer, expedienteId, tipo, file.name);
                 fileUrl = result.url;
                 fileSize = result.size;
+
+                // 2. OCR según tipo de documento (si no viene ya del cliente)
+                if (!clientDatos) {
+                    if (tipo === "estados-financieros") {
+                        estatus = "Procesado";
+                        const text = await extractTextFromFinancialPDF(buffer);
+                        const parsed = parseFinancialStatement(text);
+                        datosExtraidos = JSON.stringify(parsed);
+                        ocrData = parsed;
+
+                        // Subir JSON resultado a Supabase Storage como respaldo
+                        try {
+                            await uploadJSON(datosExtraidos, expedienteId, tipo);
+                        } catch (e) {
+                            console.warn("No se pudo subir JSON OCR a Supabase:", e);
+                        }
+
+                    } else if (tipo === "estados-cuenta-banco") {
+                        estatus = "Procesado";
+                        const text = await extractTextFromPDF(buffer);
+                        const parsed = parseBankStatementData(text);
+                        datosExtraidos = JSON.stringify(parsed);
+                        ocrData = parsed;
+
+                        // Guardar TXT local de respaldo
+                        try {
+                            await fs.mkdir(STORAGE_DIR, { recursive: true });
+                            const safeName = originalName.replace(/[^a-zA-Z0-9.-]/g, "_");
+                            const docId = tipo;
+                            const txtContent = generateTxtReport(originalName, parsed, docId);
+                            await fs.writeFile(
+                                path.join(STORAGE_DIR, `${Date.now()}_${safeName}.txt`),
+                                txtContent
+                            );
+                        } catch (e) {
+                            console.warn("No se pudo guardar TXT local:", e);
+                        }
+                    }
+                } else {
+                    // Datos ya procesados por el cliente (legacy support)
+                    datosExtraidos = clientDatos;
+                    try { ocrData = JSON.parse(clientDatos); } catch { /* ignore */ }
+                }
             }
         } else {
             // JSON fallback (no file)
@@ -60,13 +113,13 @@ export async function POST(
             );
         }
 
-        // Verify expediente exists
+        // Verificar que el expediente existe
         const exp = await prisma.expediente.findUnique({ where: { id: expedienteId } });
         if (!exp) {
             return NextResponse.json({ error: "Expediente no encontrado." }, { status: 404 });
         }
 
-        // Create document record
+        // Crear registro del documento con OCR ya incluido
         const doc = await prisma.documento.create({
             data: {
                 expedienteId,
@@ -79,7 +132,7 @@ export async function POST(
             },
         });
 
-        // Recalculate completitud
+        // Recalcular completitud
         const docsActualizados = await prisma.documento.findMany({ where: { expedienteId } });
         const resultado = calcularCompletitud({ ...exp, documentos: docsActualizados });
 
@@ -88,7 +141,13 @@ export async function POST(
             data: { completitud: resultado.totalPct },
         });
 
-        return NextResponse.json({ success: true, data: doc, completitud: resultado.totalPct });
+        return NextResponse.json({
+            success: true,
+            data: doc,
+            completitud: resultado.totalPct,
+            ...(ocrData && { ocrData }),
+        });
+
     } catch (error: any) {
         console.error(`POST /api/expedientes/${(await params).id}/documentos:`, error);
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -96,7 +155,6 @@ export async function POST(
 }
 
 // ── GET /api/expedientes/[id]/documentos ────────────────────────────────────
-// Lista todos los documentos del expediente con sus URLs de descarga.
 export async function GET(
     _request: Request,
     { params }: { params: Promise<{ id: string }> }

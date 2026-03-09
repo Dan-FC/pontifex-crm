@@ -1,6 +1,3 @@
-// This is your Prisma schema file.
-// Database URL is read from the DATABASE_URL env variable.
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,60 +6,70 @@ datasource db {
   provider = "sqlite"
 }
 
-
-// ── Expediente (caso central) ─────────────────────────────────────────────────
 model Expediente {
-  id                  String   @id @default(cuid())
+  id                  String           @id @default(cuid())
   cliente             String
-  rfc                 String   @default("")
-  sector              String   @default("")
-  email               String   @default("")
-  telefono            String   @default("")
-  contacto            String   @default("")
+  rfc                 String           @default("")
+  sector              String           @default("")
+  email               String           @default("")
+  telefono            String           @default("")
+  contacto            String           @default("")
   ejecutivo           String
   tipoFinanciamiento  String
-  montoSolicitado     String   @default("")
-  etapa               Int      @default(1)
-  etapaNombre         String   @default("Documentación")
-  situacion           String   @default("En curso")
-  completitud         Int      @default(0)
-  observaciones       String   @default("")
-  alertas             String   @default("[]")
-  matrizRiesgo        String   @default("{}")
-  fechaAlta           DateTime @default(now())
-  ultimaActualizacion DateTime @updatedAt
-
-  documentos     Documento[]
-  completitudLog CompletitudLog[]
+  montoSolicitado     String           @default("")
+  etapa               Int              @default(1)
+  etapaNombre         String           @default("Documentación")
+  situacion           String           @default("En curso")
+  completitud         Int              @default(0)
+  observaciones       String           @default("")
+  alertas             String           @default("[]")
+  matrizRiesgo        String           @default("{}")
+  fechaConstitucion   String           @default("")
+  fechaAlta           DateTime         @default(now())
+  ultimaActualizacion DateTime         @updatedAt
+  folio               Int              @default(0)
+  rechazoMotivo       String           @default("")
+  rechazoResponsable  String           @default("")
+  rechazoFecha        String           @default("")
+  completitudLog      CompletitudLog[]
+  documentos          Documento[]
+  actividadLog        ActividadLog[]
 }
 
-// ── Documento vinculado al expediente ─────────────────────────────────────────
-model Documento {
-  id           String   @id @default(cuid())
+model ActividadLog {
+  id           String     @id @default(cuid())
   expedienteId String
-  nombre       String
-  tipo         String   @default("Estado de cuenta bancario")
-  estatus      String   @default("Pendiente")
-  fecha        DateTime @default(now())
-  ingresos     String?
-  egresos      String?
-  movimientos  Int      @default(0)
-  rawTxt       String?
-  archivoPath  String?
-  url            String?  // URL pública de Supabase Storage
-  size           Int?     // Tamaño del archivo en bytes
-  datosExtraidos String?  // JSON – ParsedFinancialStatement o datos OCR
-
-  expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  tipo         String
+  descripcion  String
+  usuario      String     @default("Sistema")
+  metadata     String     @default("{}")
+  creadoEn     DateTime   @default(now())
+  expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
 }
 
-// ── Log de completitud por cálculo ────────────────────────────────────────────
+model Documento {
+  id             String     @id @default(cuid())
+  expedienteId   String
+  nombre         String
+  tipo           String     @default("Estado de cuenta bancario")
+  estatus        String     @default("Pendiente")
+  fecha          DateTime   @default(now())
+  ingresos       String?
+  egresos        String?
+  movimientos    Int        @default(0)
+  rawTxt         String?
+  archivoPath    String?
+  size           Int?
+  url            String?
+  datosExtraidos String?
+  expediente     Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+}
+
 model CompletitudLog {
-  id           String   @id @default(cuid())
+  id           String     @id @default(cuid())
   expedienteId String
   totalPct     Int
   categorias   String
-  creadoEn     DateTime @default(now())
-
-  expediente Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
+  creadoEn     DateTime   @default(now())
+  expediente   Expediente @relation(fields: [expedienteId], references: [id], onDelete: Cascade)
 }

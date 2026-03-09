@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         const body = await request.json();
         const {
             cliente, rfc, sector, email, telefono, contacto,
-            ejecutivo, tipoFinanciamiento, montoSolicitado, observaciones,
+            ejecutivo, tipoFinanciamiento, montoSolicitado, observaciones, fechaConstitucion,
         } = body;
 
         if (!cliente?.trim() || !ejecutivo?.trim() || !tipoFinanciamiento?.trim()) {
@@ -55,9 +55,14 @@ export async function POST(request: Request) {
             );
         }
 
+        // Calcular siguiente folio
+        const lastFolio = await prisma.expediente.findFirst({ orderBy: { folio: "desc" }, select: { folio: true } });
+        const folio = (lastFolio?.folio ?? 0) + 1;
+
         // Crear el expediente
         const expediente = await prisma.expediente.create({
             data: {
+                folio,
                 cliente: cliente.trim(),
                 rfc: rfc?.trim() || "",
                 sector: sector?.trim() || "",
@@ -67,6 +72,7 @@ export async function POST(request: Request) {
                 ejecutivo: ejecutivo.trim(),
                 tipoFinanciamiento: tipoFinanciamiento.trim(),
                 montoSolicitado: montoSolicitado?.trim() || "",
+                fechaConstitucion: fechaConstitucion?.trim() || "",
                 etapa: 1,
                 etapaNombre: ETAPAS_PROCESO[0],
                 situacion: "En curso",
@@ -95,6 +101,15 @@ export async function POST(request: Request) {
                 expedienteId: expediente.id,
                 totalPct: resultado.totalPct,
                 categorias: JSON.stringify(resultado.categorias),
+            },
+        });
+
+        await prisma.actividadLog.create({
+            data: {
+                expedienteId: expediente.id,
+                tipo: "creado",
+                descripcion: `Expediente creado para ${expediente.cliente} por ${expediente.ejecutivo}`,
+                usuario: expediente.ejecutivo,
             },
         });
 
