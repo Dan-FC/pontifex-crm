@@ -137,7 +137,7 @@ const PATTERNS: Record<string, RegExp> = {
         /docs?\.?\s*(?:x|por)\s*pagar\s*c\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*corto\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?corto\s*plazo|documentos?\s*comerciales?\s*por\s*pagar|pagar[eé]s?\b|cr[eé]ditos?\s*bancarios?\s*c\.?p\.?\b/i,
 
     pasivoLargoPlazo:
-        /\bpasivo\s*(?:largo\s*plazo|a\s*largo\s*plazo|no\s*corriente)\b|pasivos?\s*(?:no\s*corrientes?|largo\s*plazo)|deuda\s*a\s*largo\s*plazo|obligaciones?\s*a\s*largo\s*plazo/i,
+        /\bpasivo\s*(?:largo\s*plazo|a\s*largo\s*plazo|no\s*corriente|l\.?\s*p\.?)\b|pasivos?\s*(?:no\s*corrientes?|largo\s*plazo|l\.?\s*p\.?)|deuda\s*a\s*largo\s*plazo|obligaciones?\s*a\s*largo\s*plazo|\bpasivo\s+lp\b/i,
 
     docsPagarLP:
         /docs?\.?\s*(?:x|por)\s*pagar\s*l\.?p\.?\b|docs?\.?\s*(?:x|por)\s*pagar\s*largo\s*plazo|documentos?\s*por\s*pagar\s*(?:a\s*)?(?:largo\s*plazo|l\.?\/?p\.?)\b|cr[eé]ditos?\s*bancarios?\s*l\.?p\.?\b|pr[eé]stamos?\s*bancarios?\s*l\.?p\.?\b|financiamiento\s*a\s*largo\s*plazo|\bhip[oó]teca\b/i,
@@ -164,7 +164,7 @@ const PATTERNS: Record<string, RegExp> = {
         /\bventas?\s*netas?\b|\bventas?\s*totales?\b|\bventas?\b(?!\s*(?:de|del)\s*(?:mercanc|producci|costo|administr))|total\s*de\s*ingresos?\b|\bingresos?\s*(?:netos?|totales?|por\s*ventas?|operativos?|de\s*operaci[oó]n|de\s*operaciones?)?(?!\s*(?:financieros?|no\s*operativos?|diversos?|extraordinarios?))(?!\s*otros?)|\bfacturaci[oó]n\b/i,
 
     costoVenta:
-        /costos?\s*(?:de\s*)?(?:venta|ventas?|producci[oó]n|mercanc[íi]a\s*vendida|bienes?\s*vendidos?|productos?\s*vendidos?)|costo\s*directo(?:\s*de\s*(?:venta|ventas?|producci[oó]n))?/i,
+        /costos?\s*(?:de\s*)?(?:venta|ventas?|producci[oó]n|mercanc[íi]a\s*vendida|bienes?\s*vendidos?|productos?\s*vendidos?)|costo\s*directo(?:\s*de\s*(?:venta|ventas?|producci[oó]n|fabricaci[oó]n))?|costo\s*de\s*fabricaci[oó]n/i,
 
     utilidadBruta:
         /ut\.?\s*(?:ilidad)?\s*bruta\b|resultado\s*bruto\b|ganancia\s*bruta\b|margen\s*bruto\b|beneficio\s*bruto\b/i,
@@ -206,7 +206,10 @@ const PATTERNS: Record<string, RegExp> = {
  */
 function preprocessText(text: string): string {
     let result = text.replace(/(\d{1,3}(?:,\d{3})*)(\d{1,3}(?:\.\d{1,2})?%)/g, "$1 $2 ");
+    // Add space between letter→digit AND digit→letter so word boundaries work
+    // when labels and amounts are concatenated without spaces (e.g. "5,000.00Proveedores$155,000")
     result = result.replace(/([a-zA-ZáéíóúÁÉÍÓÚüÜñÑ])(\d)/g, "$1 $2");
+    result = result.replace(/(\d)([a-zA-ZáéíóúÁÉÍÓÚüÜñÑ])/g, "$1 $2");
     return result;
 }
 
@@ -578,8 +581,9 @@ export function calcularKPIs(bg: BalanceGeneral, er: EstadoResultados): KPIs {
         liquidezCirculante: ratio(bg.activoCirculante, bg.pasivoCirculante),
         capitalTrabajo: bg.activoCirculante !== null && bg.pasivoCirculante !== null
             ? bg.activoCirculante - bg.pasivoCirculante : null,
-        pruebaAcido: bg.activoCirculante !== null && bg.inventarios !== null
-            ? ratio(bg.activoCirculante - bg.inventarios, bg.pasivoCirculante)
+        // Si no hay inventarios (empresa de servicios), se trata como 0 → prueba ácido = razón circulante
+        pruebaAcido: bg.activoCirculante !== null
+            ? ratio(bg.activoCirculante - (bg.inventarios ?? 0), bg.pasivoCirculante)
             : null,
         // Actividad
         rotacionCxC: ratio(er.ventas, bg.clientes),

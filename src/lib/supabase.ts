@@ -26,14 +26,14 @@ export async function uploadPDF(
 ): Promise<{ url: string; path: string; size: number }> {
     const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const categoria = getCategoriaDeDoc(docId);
-    // Ruta organizada: {expedienteId}/{categoria}/{docId}/{archivo}
-    const storagePath = `${expedienteId}/${categoria}/${docId}/${safeName}`;
+    // Incluir timestamp para que cada subida sea un archivo único en Storage
+    const storagePath = `${expedienteId}/${categoria}/${docId}/${Date.now()}_${safeName}`;
 
     const { data, error } = await supabase.storage
         .from(STORAGE_BUCKET)
         .upload(storagePath, buffer, {
             contentType: "application/pdf",
-            upsert: true,
+            upsert: false,
         });
 
     if (error) throw new Error(`Supabase Storage error: ${error.message}`);
@@ -43,6 +43,18 @@ export async function uploadPDF(
         .getPublicUrl(data.path);
 
     return { url: publicUrl, path: data.path, size: buffer.length };
+}
+
+/**
+ * Delete a file from Supabase Storage given its public URL.
+ */
+export async function deletePDF(publicUrl: string): Promise<void> {
+    const marker = `/storage/v1/object/public/${STORAGE_BUCKET}/`;
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return; // URL doesn't match expected format — skip
+    const storagePath = decodeURIComponent(publicUrl.slice(idx + marker.length));
+    const { error } = await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    if (error) console.warn(`Supabase Storage delete warning: ${error.message}`);
 }
 
 /**

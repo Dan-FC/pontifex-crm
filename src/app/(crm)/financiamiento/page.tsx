@@ -31,14 +31,6 @@ export default function FinanciamientoPage() {
                 <p className="text-gray-500 mt-1">Partners ORO — instituciones financieras con convenio activo o en proceso</p>
             </div>
 
-            {/* Disclaimer */}
-            <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-4 mb-6 flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
-                <p className="text-sm text-blue-700">
-                    Las instituciones mostradas forman parte del portafolio ORO de Pontifex. La elegibilidad final de cada caso depende del análisis individual de la institución.
-                </p>
-            </div>
-
             {/* Filtros */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-center">
                 <div className="flex items-center gap-2 text-gray-400">

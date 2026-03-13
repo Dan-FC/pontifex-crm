@@ -17,7 +17,7 @@ export default function Sidebar() {
     return (
         <aside className="fixed left-0 top-0 h-full w-64 bg-[#0f172a] flex flex-col z-30">
             {/* Logo */}
-            <div className="px-4 border-b border-white/10">
+            <div className="px-4 py-8 border-b border-white/10">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                     src="/logo-nexus.png"

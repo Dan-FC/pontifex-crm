@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { deletePDF } from "@/lib/supabase";
 
 // ── PATCH /api/expedientes/[id]/documentos/[docId] ───────────────────────────
 // Actualiza datosExtraidos y/o nombre de un documento específico.
@@ -38,7 +39,21 @@ export async function DELETE(
 ) {
     const { id: expedienteId, docId } = await params;
     try {
+        // Obtener URL antes de borrar el registro para poder limpiar Storage
+        const doc = await prisma.documento.findUnique({
+            where: { id: docId, expedienteId },
+            select: { url: true },
+        });
+
         await prisma.documento.delete({ where: { id: docId, expedienteId } });
+
+        // Eliminar archivo de Supabase Storage (no bloqueante si falla)
+        if (doc?.url) {
+            await deletePDF(doc.url).catch(e =>
+                console.warn("No se pudo eliminar archivo de Storage:", e)
+            );
+        }
+
         return NextResponse.json({ success: true });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });

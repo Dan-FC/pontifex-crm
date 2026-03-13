@@ -202,7 +202,7 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
             {/* Datos editables */}
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
                 <div className="flex items-center justify-between mb-4">
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
                         <User className="w-3.5 h-3.5" />Datos del expediente
                     </p>
                     {!editing ? (
@@ -235,17 +235,17 @@ function TabResumen({ caso, onUpdate }: { caso: Case; onUpdate?: (updated: Case)
                         { key: "fechaConstitucion", label: "Fecha de constitución",  type: "date",  placeholder: "",                      view: caso.fechaConstitucion ? fmtDate(caso.fechaConstitucion) : "", warn: !caso.fechaConstitucion },
                     ] as Array<{ key: keyof typeof editForm; label: string; type: string; placeholder: string; view: string; warn: boolean }>).map(({ key, label, type, placeholder, view, warn }) => (
                         <div key={key}>
-                            <p className="text-xs text-gray-400 mb-1">{label}</p>
+                            <p className="text-sm text-gray-400 mb-1">{label}</p>
                             {editing ? (
                                 <input
                                     type={type}
                                     value={editForm[key]}
                                     onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
                                     placeholder={placeholder}
-                                    className="w-full text-sm font-semibold text-gray-800 bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 pb-0.5"
+                                    className="w-full text-base font-semibold text-gray-800 bg-transparent border-b border-blue-300 focus:outline-none focus:border-blue-500 pb-0.5"
                                 />
                             ) : (
-                                <p className={`text-sm font-semibold ${warn ? "text-red-400 italic" : "text-gray-800"}`}>
+                                <p className={`text-base font-semibold ${warn ? "text-red-400 italic" : "text-gray-800"}`}>
                                     {view || "—"}
                                 </p>
                             )}
@@ -530,8 +530,8 @@ function FinancialStatementPreview({
     // Section subtotal row (bold, left accent, always visible)
     const SRow = ({ label, fk, val }: { label: string; fk?: string; val: number | null | undefined }) => (
         <div className="flex items-center justify-between py-1.5 px-2 mt-1.5 bg-blue-50 border-l-2 border-blue-400 rounded-r-md">
-            <span className="text-[11px] font-bold text-blue-900">{label}</span>
-            <span className={`text-[11px] font-extrabold tabular-nums ${val == null ? "text-blue-200" : "text-blue-900"}`}>
+            <span className="text-sm font-bold text-blue-900">{label}</span>
+            <span className={`text-sm font-extrabold tabular-nums ${val == null ? "text-blue-200" : "text-blue-900"}`}>
                 {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
             </span>
         </div>
@@ -542,8 +542,8 @@ function FinancialStatementPreview({
         if (!editMode && val == null) return null;
         return (
             <div className="flex items-center justify-between py-0.5 px-2 pl-5">
-                <span className="text-[11px] text-gray-500">{label}</span>
-                <span className={`text-[11px] tabular-nums ${val == null ? "text-gray-300" : "text-gray-700 font-medium"}`}>
+                <span className="text-sm text-gray-500">{label}</span>
+                <span className={`text-sm tabular-nums ${val == null ? "text-gray-300" : "text-gray-700 font-medium"}`}>
                     {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
                 </span>
             </div>
@@ -553,8 +553,8 @@ function FinancialStatementPreview({
     // Grand total bar
     const GRow = ({ label, fk, val }: { label: string; fk?: string; val: number | null | undefined }) => (
         <div className="flex items-center justify-between mt-2 px-3 py-2 rounded-lg bg-blue-700">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-100">{label}</span>
-            <span className={`text-sm font-black tabular-nums ${val == null ? "text-blue-400" : "text-white"}`}>
+            <span className="text-sm font-bold uppercase tracking-wider text-blue-100">{label}</span>
+            <span className={`text-base font-black tabular-nums ${val == null ? "text-blue-400" : "text-white"}`}>
                 {editMode && fk ? <EditInput fk={fk} /> : (money(val) ?? "—")}
             </span>
         </div>
@@ -562,7 +562,7 @@ function FinancialStatementPreview({
 
     const ColHead = ({ children }: { children: React.ReactNode }) => (
         <div className="mb-1.5 pb-1 border-b border-blue-100">
-            <span className="text-[10px] font-black uppercase tracking-widest text-blue-400">{children}</span>
+            <span className="text-xs font-black uppercase tracking-widest text-blue-400">{children}</span>
         </div>
     );
 
@@ -1035,30 +1035,6 @@ const MATRIX_SECTIONS = [
                 { id: "a3", valor: "1 a 2 años", puntos: 2 },
                 { id: "a4", valor: "Menos de 1 año", puntos: 1 },
             ]},
-            { id: "tipo-admin", nombre: "Tipo de administración", opciones: [
-                { id: "b1", valor: "Profesional con experiencia", puntos: 5 },
-                { id: "b2", valor: "Familiar con experiencia", puntos: 4 },
-                { id: "b3", valor: "Profesional sin experiencia", puntos: 3 },
-                { id: "b4", valor: "Familiar sin experiencia", puntos: 2 },
-            ]},
-            { id: "quien-decide", nombre: "Quien administra y toma decisiones", opciones: [
-                { id: "c1", valor: "Gobierno Corporativo", puntos: 4 },
-                { id: "c2", valor: "Consejo de administración", puntos: 3 },
-                { id: "c3", valor: "Administrador único con asesoría", puntos: 2 },
-                { id: "c4", valor: "Centralizada en una sola persona", puntos: 1 },
-                { id: "c5", valor: "No se identifica quien toma las decisiones", puntos: 0 },
-            ]},
-            { id: "exp-admin", nombre: "Experiencia de los administradores", opciones: [
-                { id: "d1", valor: "Más de 5 años", puntos: 4 },
-                { id: "d2", valor: "2 a 5 años", puntos: 2 },
-                { id: "d3", valor: "1 a 2 años", puntos: 1 },
-                { id: "d4", valor: "Menos de 1 año", puntos: 0 },
-            ]},
-            { id: "tenencia", nombre: "Tenencia Accionaria", opciones: [
-                { id: "e1", valor: "Ningún Accionista tiene más del 50%", puntos: 4 },
-                { id: "e2", valor: "Un Accionista tiene más del 50% con consejeros independientes", puntos: 2 },
-                { id: "e3", valor: "Un Accionista tiene más del 50%", puntos: 0 },
-            ]},
         ],
     },
     {
@@ -1088,7 +1064,7 @@ const MATRIX_SECTIONS = [
         id: "conducta-crediticia", nombre: "Conducta Crediticia y Colateral", color: "amber",
         factores: [
             { id: "calidad-exp-acred", nombre: "Calidad de Experiencia Crediticia del Acreditado", opciones: [
-                { id: "i1", valor: "Buen historial", puntos: 4 },
+                { id: "i1", valor: "Buen historial", puntos: 3 },
                 { id: "i2", valor: "Con fallas", puntos: 1 },
                 { id: "i3", valor: "Rechazo", puntos: 0 },
                 { id: "i4", valor: "Sin historial", puntos: 2 },
@@ -1098,35 +1074,6 @@ const MATRIX_SECTIONS = [
                 { id: "j2", valor: "580 a 699 puntos", puntos: 3 },
                 { id: "j3", valor: "500 a 579 puntos", puntos: 1 },
                 { id: "j4", valor: "0 a 499 puntos", puntos: 0 },
-            ]},
-            { id: "calidad-exp-avales", nombre: "Calidad de Experiencia Crediticia de Avales y/o Deudores Solidarios", opciones: [
-                { id: "k1", valor: "Buen historial", puntos: 4 },
-                { id: "k2", valor: "Con fallas", puntos: 1 },
-                { id: "k3", valor: "Rechazo", puntos: 0 },
-                { id: "k4", valor: "Sin historial", puntos: 2 },
-            ]},
-            { id: "score-avales", nombre: "Score de Experiencia Crediticia de Avales y/o Deudores Solidarios", opciones: [
-                { id: "l1", valor: "700 o más puntos", puntos: 4 },
-                { id: "l2", valor: "580 a 699 puntos", puntos: 3 },
-                { id: "l3", valor: "500 a 579 puntos", puntos: 1 },
-                { id: "l4", valor: "0 a 499 puntos", puntos: 0 },
-            ]},
-            { id: "domicilios-buro", nombre: "Domicilios registrados en el Buró en 1 año", opciones: [
-                { id: "m1", valor: "1 domicilio", puntos: 4 },
-                { id: "m2", valor: "2 ó 3 domicilios", puntos: 3 },
-                { id: "m3", valor: "4 o más domicilios", puntos: 1 },
-            ]},
-            { id: "exp-empresa", nombre: "Experiencia Crediticia con la empresa", opciones: [
-                { id: "n1", valor: "Bueno", puntos: 5 },
-                { id: "n2", valor: "Regular", puntos: 3 },
-                { id: "n3", valor: "Sin historial previo", puntos: 2 },
-                { id: "n4", valor: "Malo", puntos: 0 },
-            ]},
-            { id: "referencias", nombre: "Referencias", opciones: [
-                { id: "o1", valor: "Buenas", puntos: 5 },
-                { id: "o2", valor: "Regulares", puntos: 3 },
-                { id: "o3", valor: "Sin Antecedentes", puntos: 2 },
-                { id: "o4", valor: "Malas", puntos: 0 },
             ]},
         ],
     },
@@ -1141,53 +1088,30 @@ const MATRIX_SECTIONS = [
                 { id: "p5", valor: "Personal", puntos: 1 },
             ]},
             { id: "plazo", nombre: "Plazo", opciones: [
-                { id: "q1", valor: "Menos de 12 meses", puntos: 5 },
-                { id: "q2", valor: "12 a 36 meses", puntos: 4 },
-                { id: "q3", valor: "36 a 48 meses", puntos: 3 },
-                { id: "q4", valor: "48 a 60 meses", puntos: 2 },
-                { id: "q5", valor: "Más de 60 meses", puntos: 1 },
-            ]},
-            { id: "garantias", nombre: "Garantías", opciones: [
-                { id: "r1", valor: "Fiduciaria", puntos: 5 },
-                { id: "r2", valor: "Líquida", puntos: 4 },
-                { id: "r3", valor: "Hipotecaria", puntos: 3 },
-                { id: "r4", valor: "Prendaria", puntos: 3 },
-                { id: "r5", valor: "Aval", puntos: 2 },
-                { id: "r6", valor: "Sin garantía", puntos: 1 },
-            ]},
-            { id: "suficiencia-garantias", nombre: "Suficiencia de Garantías", opciones: [
-                { id: "s1", valor: "Aceptable", puntos: 5 },
-                { id: "s2", valor: "Regular", puntos: 3 },
-                { id: "s3", valor: "Malo", puntos: 0 },
-            ]},
-            { id: "situacion-avales", nombre: "Situación de Avales", opciones: [
-                { id: "t1", valor: "Excelente", puntos: 5 },
-                { id: "t2", valor: "Buenas", puntos: 3 },
-                { id: "t3", valor: "Mala", puntos: 0 },
+                { id: "q1", valor: "< 12 meses", puntos: 5 },
+                { id: "q2", valor: "12 – 36 meses", puntos: 4 },
+                { id: "q3", valor: "36 – 48 meses", puntos: 3 },
+                { id: "q4", valor: "48 – 60 meses", puntos: 2 },
+                { id: "q5", valor: "> 60 meses", puntos: 1 },
             ]},
         ],
     },
     {
         id: "capacidad-pago", nombre: "Capacidad de Pago", color: "indigo",
         factores: [
-            { id: "cubre-120", nombre: "Cubre el Crédito al 120% — (Ingresos − Egresos) / (Total Adeudos + Intereses)", opciones: [
-                { id: "u1", valor: "Mayor a 200", puntos: 5 },
-                { id: "u2", valor: "120 a 200", puntos: 4 },
-                { id: "u3", valor: "Menor a 120", puntos: 1 },
+            { id: "endeud-sin", nombre: "Grado de endeudamiento sin préstamo", opciones: [
+                { id: "v1", valor: "0 a 25", puntos: 6 },
+                { id: "v2", valor: "26 a 50", puntos: 3 },
+                { id: "v3", valor: "51 a 75", puntos: 2 },
+                { id: "v4", valor: "76 a 100", puntos: 1 },
+                { id: "v5", valor: "> 100", puntos: 0 },
             ]},
-            { id: "endeud-sin", nombre: "Grado de endeudamiento sin préstamo (%)", opciones: [
-                { id: "v1", valor: "0 a 25%", puntos: 5 },
-                { id: "v2", valor: "26 a 50%", puntos: 3 },
-                { id: "v3", valor: "51 a 75%", puntos: 2 },
-                { id: "v4", valor: "76 a 100%", puntos: 1 },
-                { id: "v5", valor: "Mayor a 100%", puntos: 0 },
-            ]},
-            { id: "endeud-con", nombre: "Grado de endeudamiento con préstamo (%)", opciones: [
-                { id: "w1", valor: "0 a 25%", puntos: 5 },
-                { id: "w2", valor: "26 a 50%", puntos: 4 },
-                { id: "w3", valor: "51 a 75%", puntos: 3 },
-                { id: "w4", valor: "76 a 100%", puntos: 1 },
-                { id: "w5", valor: "Mayor a 100%", puntos: 0 },
+            { id: "endeud-con", nombre: "Grado de endeudamiento con préstamo", opciones: [
+                { id: "w1", valor: "0 a 25", puntos: 6 },
+                { id: "w2", valor: "26 a 50", puntos: 4 },
+                { id: "w3", valor: "51 a 75", puntos: 3 },
+                { id: "w4", valor: "76 a 100", puntos: 1 },
+                { id: "w5", valor: "> 100", puntos: 0 },
             ]},
         ],
     },
@@ -1195,29 +1119,44 @@ const MATRIX_SECTIONS = [
         id: "indicadores-fin", nombre: "Indicadores Financieros", color: "purple",
         factores: [
             { id: "razon-circ", nombre: "Razón Circulante (Pasivo Circ. / Activo Circ.)", opciones: [
-                { id: "x1", valor: "Buena", puntos: 4 },
-                { id: "x2", valor: "Débil", puntos: 2 },
+                { id: "x1", valor: "Buena", puntos: 6 },
+                { id: "x2", valor: "Débil", puntos: 3 },
                 { id: "x3", valor: "Mala", puntos: 0 },
             ]},
-            { id: "prueba-acido", nombre: "Prueba del Ácido (Activo Circ. − Invent. / Pasivo Circ.)", opciones: [
-                { id: "y1", valor: "Buena", puntos: 4 },
-                { id: "y2", valor: "Débil", puntos: 2 },
-                { id: "y3", valor: "Mala", puntos: 0 },
+            { id: "rotacion-activos", nombre: "Rotación de activos", opciones: [
+                { id: "ra1", valor: "Buena", puntos: 4 },
+                { id: "ra2", valor: "Débil", puntos: 2 },
+                { id: "ra3", valor: "Mala", puntos: 0 },
             ]},
-            { id: "cobertura-deuda", nombre: "Cobertura de deuda (EBITDA / Gastos Financieros)", opciones: [
-                { id: "z1", valor: "Buena", puntos: 4 },
-                { id: "z2", valor: "Débil", puntos: 2 },
+            { id: "rotacion-cxc", nombre: "Rotación de cuentas por cobrar", opciones: [
+                { id: "rc1", valor: "Buena", puntos: 5 },
+                { id: "rc2", valor: "Débil", puntos: 3 },
+                { id: "rc3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "cobertura-deuda", nombre: "Cobertura de deuda (Utilidad de Operación / Gastos Financieros)", opciones: [
+                { id: "z1", valor: "Buena", puntos: 6 },
+                { id: "z2", valor: "Débil", puntos: 3 },
                 { id: "z3", valor: "Mala", puntos: 0 },
             ]},
-            { id: "autosuficiencia", nombre: "Autosuficiencia Operativa", opciones: [
-                { id: "aa1", valor: "Buena", puntos: 5 },
-                { id: "aa2", valor: "Débil", puntos: 3 },
-                { id: "aa3", valor: "Mala", puntos: 0 },
+            { id: "razon-endeudamiento", nombre: "Razón de endeudamiento", opciones: [
+                { id: "re1", valor: "Buena", puntos: 6 },
+                { id: "re2", valor: "Débil", puntos: 3 },
+                { id: "re3", valor: "Mala", puntos: 0 },
             ]},
-            { id: "apalancamiento", nombre: "Apalancamiento (Pasivo Total / Capital Contable)", opciones: [
-                { id: "ab1", valor: "Buena", puntos: 5 },
+            { id: "apalancamiento", nombre: "Deuda / Capital (Apalancamiento)", opciones: [
+                { id: "ab1", valor: "Buena", puntos: 6 },
                 { id: "ab2", valor: "Débil", puntos: 3 },
                 { id: "ab3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "cobertura-intereses", nombre: "Cobertura de intereses", opciones: [
+                { id: "ci1", valor: "Buena", puntos: 6 },
+                { id: "ci2", valor: "Débil", puntos: 3 },
+                { id: "ci3", valor: "Mala", puntos: 0 },
+            ]},
+            { id: "margen-neto", nombre: "Margen Neto", opciones: [
+                { id: "mn1", valor: "Buena", puntos: 6 },
+                { id: "mn2", valor: "Débil", puntos: 3 },
+                { id: "mn3", valor: "Mala", puntos: 0 },
             ]},
             { id: "roa", nombre: "ROA", opciones: [
                 { id: "ac1", valor: "Buena", puntos: 5 },
@@ -1225,42 +1164,52 @@ const MATRIX_SECTIONS = [
                 { id: "ac3", valor: "Mala", puntos: 0 },
             ]},
             { id: "roe", nombre: "ROE", opciones: [
-                { id: "ad1", valor: "Buena", puntos: 5 },
+                { id: "ad1", valor: "Buena", puntos: 6 },
                 { id: "ad2", valor: "Débil", puntos: 3 },
                 { id: "ad3", valor: "Mala", puntos: 0 },
-            ]},
-        ],
-    },
-    {
-        id: "infraestructura", nombre: "Infraestructura", color: "rose",
-        factores: [
-            { id: "estructura-org", nombre: "Estructura Organizacional", opciones: [
-                { id: "ae1", valor: "Satisfactoria", puntos: 4 },
-                { id: "ae2", valor: "Regular", puntos: 2 },
-                { id: "ae3", valor: "Insuficiente o deficiente", puntos: 0 },
-            ]},
-            { id: "competencia-admin", nombre: "Competencia de la Administración", opciones: [
-                { id: "af1", valor: "Buena", puntos: 4 },
-                { id: "af2", valor: "Regular", puntos: 2 },
-                { id: "af3", valor: "Mala", puntos: 0 },
-            ]},
-            { id: "manuales", nombre: "Manuales de Políticas y Procedimientos", opciones: [
-                { id: "ag1", valor: "De todos sus procesos actualizados", puntos: 4 },
-                { id: "ag2", valor: "De todos sus procesos desactualizados", puntos: 3 },
-                { id: "ag3", valor: "De algunos procesos actualizados", puntos: 2 },
-                { id: "ag4", valor: "De algunos procesos desactualizados", puntos: 1 },
-                { id: "ag5", valor: "No existen", puntos: 0 },
-            ]},
-            { id: "tecnologia", nombre: "Infraestructura Tecnológica", opciones: [
-                { id: "ah1", valor: "Suficiente con medidas de seguridad adecuadas", puntos: 4 },
-                { id: "ah2", valor: "Suficiente con medidas de seguridad inadecuadas", puntos: 2 },
-                { id: "ah3", valor: "Insuficiente con medidas de seguridad deficientes", puntos: 0 },
             ]},
         ],
     },
 ] as const;
 
 type Selecciones = Record<string, string>;
+
+// ─── KPI client-side recalculation ───────────────────────────────────────────
+// Mirrors calcularKPIs() from financial-statement-parser.ts
+function calcKpisClient(bg: any, er: any, montoSolicitado?: number | null): Record<string, number | null> {
+    const r = (a: number | null | undefined, b: number | null | undefined) =>
+        a != null && b != null && b !== 0 ? parseFloat((a / b).toFixed(4)) : null;
+    const cc = bg.capitalContable != null ? bg.capitalContable
+        : (bg.activoTotal != null && bg.pasivoTotal != null ? bg.activoTotal - bg.pasivoTotal : null);
+    let deudaTotalConFin: number | null = null;
+    if (montoSolicitado != null && bg.pasivoTotal != null && bg.activoTotal != null) {
+        const na = bg.activoTotal + montoSolicitado;
+        deudaTotalConFin = na !== 0 ? parseFloat(((bg.pasivoTotal + montoSolicitado) / na).toFixed(4)) : null;
+    }
+    return {
+        // Liquidez
+        liquidezCirculante: r(bg.activoCirculante, bg.pasivoCirculante),
+        pruebaAcido: bg.activoCirculante != null && bg.pasivoCirculante != null && bg.pasivoCirculante !== 0
+            ? parseFloat(((bg.activoCirculante - (bg.inventarios ?? 0)) / bg.pasivoCirculante).toFixed(4)) : null,
+        // Actividad
+        rotacionCxC: bg.clientes != null && er.ventas != null && er.ventas !== 0
+            ? parseFloat((365 / (er.ventas / bg.clientes)).toFixed(2)) : null,
+        rotacionCxP: bg.proveedores != null && er.costoVenta != null && er.costoVenta !== 0
+            ? parseFloat(((bg.proveedores / er.costoVenta) * 365).toFixed(2)) : null,
+        rotacionInventarios: bg.inventarios != null && er.costoVenta != null && er.costoVenta !== 0
+            ? parseFloat(((bg.inventarios / er.costoVenta) * 365).toFixed(2)) : null,
+        // Apalancamiento
+        deudaTotal: r(bg.pasivoTotal, bg.activoTotal),
+        deudaTotalConFin,
+        deudaCapital: r(bg.pasivoTotal, cc),
+        deudaLP: bg.pasivoLargoPlazo != null && bg.activoTotal != null && bg.pasivoTotal != null && (bg.activoTotal - bg.pasivoTotal) !== 0
+            ? parseFloat((bg.pasivoLargoPlazo / (bg.activoTotal - bg.pasivoTotal)).toFixed(4)) : null,
+        // Rentabilidad
+        margenUtilidad: r(er.utilidadNeta, er.ventas),
+        roa: r(er.utilidadNeta, bg.activoTotal),
+        roe: r(er.utilidadNeta, cc),
+    };
+}
 
 // ─── Tab: Análisis ────────────────────────────────────────────────────────────
 function TabAnalisis({ caso }: { caso: Case }) {
@@ -1269,17 +1218,136 @@ function TabAnalisis({ caso }: { caso: Case }) {
         catch { return {}; }
     });
 
+    // Monto solicitado para "Deuda Total c/ Financiamiento"
+    const monto: number | null = caso.montoSolicitado
+        ? parseFloat(String(caso.montoSolicitado).replace(/[^0-9.-]/g, "")) || null
+        : null;
+
     // KPIs — file selector for estados-financieros documents
     const allFinancialDocs = [...(caso.documentos ?? [])]
         .filter((d: any) => d.tipo === "estados-financieros" && d.datosExtraidos)
         .sort((a: any, b: any) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-    const [selectedFinDocId, setSelectedFinDocId] = useState<string | null>(null);
-    const selectedFinDoc = allFinancialDocs.find((d: any) => d.id === selectedFinDocId) ?? allFinancialDocs[0];
-    const financialData = selectedFinDoc?.datosExtraidos
-        ? (() => { try { return JSON.parse(selectedFinDoc.datosExtraidos); } catch { return null; } })()
-        : null;
-    const kpiPeriods: string[] = financialData?.periodos ?? [];
-    const kpiPeriodData: any[] = financialData?.periodData ?? [];
+    const LS_KEY = `fin-sel-${caso.id}`;
+    const [separateFiles, setSeparateFiles] = useState<boolean>(() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}").separateFiles ?? false; } catch { return false; }
+    });
+    const [selectedFinDocId, setSelectedFinDocId] = useState<string | null>(() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}").finDocId ?? null; } catch { return null; }
+    });
+    const [selectedBGDocId, setSelectedBGDocId] = useState<string | null>(() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}").bgDocId ?? null; } catch { return null; }
+    });
+    const [selectedERDocId, setSelectedERDocId] = useState<string | null>(() => {
+        try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}").erDocId ?? null; } catch { return null; }
+    });
+
+    const persistSel = (patch: object) => {
+        try {
+            const prev = JSON.parse(localStorage.getItem(LS_KEY) || "{}");
+            localStorage.setItem(LS_KEY, JSON.stringify({ ...prev, ...patch }));
+        } catch { /* ignore */ }
+    };
+
+    const parseDocData = (doc: any) => {
+        try { return doc?.datosExtraidos ? JSON.parse(doc.datosExtraidos) : null; } catch { return null; }
+    };
+
+    // Auto-detect which doc is BG and which is ER based on their extracted data
+    const bgFields = ["activoTotal", "pasivoTotal", "activoCirculante", "pasivoCirculante"];
+    const erFields = ["ventas", "costoVenta", "utilidadNeta", "utilidadBruta"];
+    // Extended field lists used for single-file scoring (more fields = better coverage)
+    const bgFieldsAll = ["activoTotal","pasivoTotal","activoCirculante","pasivoCirculante","proveedores","pasivoLargoPlazo","activoFijo","capitalContable","clientes","inventarios"];
+    const erFieldsAll = ["ventas","costoVenta","utilidadNeta","utilidadBruta","utilidadOperacion","gastosOperacion","gastosFinancieros"];
+    const scoreBG = (doc: any) => {
+        const d = parseDocData(doc);
+        const bg = d?.periodData?.[0]?.balanceGeneral ?? d?.balanceGeneral ?? {};
+        return bgFields.filter(f => bg[f] != null).length;
+    };
+    const scoreER = (doc: any) => {
+        const d = parseDocData(doc);
+        const er = d?.periodData?.[0]?.estadoResultados ?? d?.estadoResultados ?? {};
+        return erFields.filter(f => er[f] != null).length;
+    };
+    const scoreFin = (doc: any) => {
+        const d = parseDocData(doc);
+        const bg = d?.periodData?.[0]?.balanceGeneral ?? d?.balanceGeneral ?? {};
+        const er = d?.periodData?.[0]?.estadoResultados ?? d?.estadoResultados ?? {};
+        return bgFieldsAll.filter(f => (bg as any)[f] != null).length + erFieldsAll.filter(f => (er as any)[f] != null).length;
+    };
+    const defaultFinDoc = allFinancialDocs.reduce((best: any, doc: any) =>
+        !best || scoreFin(doc) > scoreFin(best) ? doc : best, null) ?? allFinancialDocs[0];
+
+    // BG default: doc con más campos de balance general
+    const defaultBGDoc = allFinancialDocs.reduce((best: any, doc: any) =>
+        !best || scoreBG(doc) > scoreBG(best) ? doc : best, null) ?? allFinancialDocs[0];
+
+    // Resolve selectedBGDoc primero para que defaultERDoc pueda excluirlo
+    const selectedBGDoc = allFinancialDocs.find((d: any) => d.id === selectedBGDocId) ?? defaultBGDoc;
+
+    // ER default: doc con más campos de estado de resultados, excluyendo el doc ya usado como BG
+    const defaultERDoc = (
+        allFinancialDocs
+            .filter((d: any) => d.id !== selectedBGDoc?.id)
+            .reduce((best: any, doc: any) =>
+                !best || scoreER(doc) > scoreER(best) ? doc : best, null as any)
+    ) ?? allFinancialDocs.find((d: any) => d.id !== selectedBGDoc?.id) ?? allFinancialDocs[0];
+
+    const selectedFinDoc = allFinancialDocs.find((d: any) => d.id === selectedFinDocId) ?? defaultFinDoc;
+    const selectedERDoc = allFinancialDocs.find((d: any) => d.id === selectedERDocId) ?? defaultERDoc;
+
+    const singleFinancialData = parseDocData(selectedFinDoc);
+    const mergedFinancialData = separateFiles ? (() => {
+        const bgParsed = parseDocData(selectedBGDoc);
+        const erParsed = parseDocData(selectedERDoc);
+        if (!bgParsed && !erParsed) return null;
+        // Si el usuario no ha seleccionado un ER distinto al BG, no usar datos de ER del BG doc
+        const sameDoc = selectedBGDoc?.id === selectedERDoc?.id;
+        // Support both new format (periodos/periodData) and old flat format (balanceGeneral at root)
+        let periodos: string[] = bgParsed?.periodos ?? erParsed?.periodos ?? [];
+        let periodData: any[];
+        if (periodos.length > 0) {
+            periodData = periodos.map((_: string, i: number) => {
+                const bg = { ...(bgParsed?.periodData?.[i]?.balanceGeneral ?? bgParsed?.balanceGeneral ?? {}) };
+                // Solo usar ER data si el usuario seleccionó un archivo de ER diferente al BG
+                const er = sameDoc ? {} : { ...(erParsed?.periodData?.[i]?.estadoResultados ?? erParsed?.estadoResultados ?? {}) };
+                if (bg.capitalContable == null && bg.activoTotal != null && bg.pasivoTotal != null)
+                    bg.capitalContable = bg.activoTotal - bg.pasivoTotal;
+                const kpis = calcKpisClient(bg, er, monto);
+                return { balanceGeneral: bg, estadoResultados: er, kpis };
+            });
+        } else {
+            // Old format: no periodos array, use top-level balanceGeneral / estadoResultados
+            const bg = { ...(bgParsed?.balanceGeneral ?? {}) };
+            const er = sameDoc ? {} : { ...(erParsed?.estadoResultados ?? {}) };
+            if (bg.capitalContable == null && bg.activoTotal != null && bg.pasivoTotal != null)
+                bg.capitalContable = bg.activoTotal - bg.pasivoTotal;
+            const kpis = calcKpisClient(bg, er, monto);
+            periodos = ["—"];
+            periodData = [{ balanceGeneral: bg, estadoResultados: er, kpis }];
+        }
+        return { periodos, periodData };
+    })() : singleFinancialData;
+
+    const kpiPeriods: string[] = mergedFinancialData?.periodos ?? [];
+    const kpiPeriodData: any[] = mergedFinancialData?.periodData ?? [];
+
+    // Auto-save merged analysis when both docs selected (debounced)
+    const [mergeAutoSaveTimer, setMergeAutoSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (!separateFiles || !mergedFinancialData || !selectedBGDoc) return;
+        if (mergeAutoSaveTimer) clearTimeout(mergeAutoSaveTimer);
+        const t = setTimeout(() => {
+            fetch(`/api/expedientes/${caso.id}/documentos/${selectedBGDoc.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ datosExtraidos: mergedFinancialData }),
+            }).catch(() => { /* silently ignore */ });
+        }, 1200);
+        setMergeAutoSaveTimer(t);
+        return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [separateFiles, selectedBGDocId, selectedERDocId]);
+
     const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
     const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
@@ -1325,7 +1393,7 @@ function TabAnalisis({ caso }: { caso: Case }) {
     const totalFactores = MATRIX_SECTIONS.reduce((s, sec) => s + sec.factores.length, 0);
     const seleccionados = Object.keys(selecciones).length;
     const pctAvance = Math.round((seleccionados / totalFactores) * 100);
-    const resolucion = totalPuntos >= 120 ? "Aprobado" : totalPuntos >= 75 ? "Dudoso" : "Rechazado";
+    const resolucion = totalPuntos >= 80 ? "Aprobado" : totalPuntos >= 60 ? "Dudoso" : "Rechazado";
 
     const sectionColors: Record<string, { header: string; badge: string; row: string; dot: string }> = {
         blue:    { header: "from-blue-900 to-blue-700",   badge: "bg-white/20 text-white", row: "hover:bg-blue-50", dot: "bg-blue-600" },
@@ -1374,19 +1442,23 @@ function TabAnalisis({ caso }: { caso: Case }) {
             group: "Liquidez", textColor: "text-blue-800", cols: "grid-cols-2",
             kpis: [
                 {
-                    key: "liquidezCirculante", label: "Razón corriente",
+                    key: "liquidezCirculante", label: "Circulante / Liquidez",
                     formulaLabel: "Activo Circulante / Pasivo Circulante",
                     getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
                         ? `${n(bg.activoCirculante)} / ${n(bg.pasivoCirculante)}` : null,
+                    calc: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null && bg.pasivoCirculante !== 0
+                        ? parseFloat((bg.activoCirculante / bg.pasivoCirculante).toFixed(4)) : null,
                     fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
                     lo: 1.0, hi: 2.0, goodHigh: true,
                     interpret: (v) => v == null ? "Sin datos" : v >= 2 ? "Liquidez alta" : v >= 1 ? "Liquidez adecuada" : "Liquidez baja",
                 },
                 {
-                    key: "pruebaAcido", label: "Prueba ácida",
-                    formulaLabel: "(AC − Inventarios) / Pasivo Circulante",
-                    getVals: (bg) => bg.activoCirculante != null && bg.inventarios != null && bg.pasivoCirculante != null
-                        ? `(${n(bg.activoCirculante)} − ${n(bg.inventarios)}) / ${n(bg.pasivoCirculante)}` : null,
+                    key: "pruebaAcido", label: "Prueba del Ácido",
+                    formulaLabel: "(Activo Circ. − Inventarios) / Pasivo Circ.",
+                    getVals: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null
+                        ? `(${n(bg.activoCirculante)} − ${n(bg.inventarios ?? 0)}) / ${n(bg.pasivoCirculante)}` : null,
+                    calc: (bg) => bg.activoCirculante != null && bg.pasivoCirculante != null && bg.pasivoCirculante !== 0
+                        ? parseFloat(((bg.activoCirculante - (bg.inventarios ?? 0)) / bg.pasivoCirculante).toFixed(4)) : null,
                     fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
                     lo: 0.5, hi: 1.0, goodHigh: true,
                     interpret: (v) => v == null ? "Sin datos" : v >= 1 ? "Liquidez alta" : v >= 0.5 ? "Liquidez adecuada" : "Liquidez baja",
@@ -1394,72 +1466,97 @@ function TabAnalisis({ caso }: { caso: Case }) {
             ],
         },
         {
-            group: "Actividad / uso de activos", textColor: "text-blue-800", cols: "grid-cols-3",
+            group: "Actividad / Uso de Activos", textColor: "text-blue-800", cols: "grid-cols-3",
             kpis: [
                 {
-                    key: "rotacionActivos", label: "Rotación de activos",
-                    formulaLabel: "Ventas / Activos Totales",
-                    getVals: (bg, er) => er.ventas != null && bg.activoTotal != null
-                        ? `${n(er.ventas)} / ${n(bg.activoTotal)}` : null,
-                    calc: (bg, er) => er.ventas != null && bg.activoTotal != null && bg.activoTotal !== 0
-                        ? parseFloat((er.ventas / bg.activoTotal).toFixed(2)) : null,
-                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
-                    lo: 0.5, hi: 1.5, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v >= 1.5 ? "Uso eficiente" : v >= 0.5 ? "Uso moderado" : "Uso bajo",
-                },
-                {
-                    key: "rotacionCxC", label: "Rot. cuentas por cobrar",
-                    formulaLabel: "Ventas / Clientes",
+                    key: "rotacionCxC", label: "Rot. Cuentas x Cobrar",
+                    formulaLabel: "365 / (Ventas / Clientes)",
                     getVals: (bg, er) => er.ventas != null && bg.clientes != null
-                        ? `${n(er.ventas)} / ${n(bg.clientes)}` : null,
-                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
-                    lo: 4, hi: 8, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v >= 8 ? "Cobro ágil" : v >= 4 ? "Cobro normal" : "Cobro lento",
+                        ? `365 / (${n(er.ventas)} / ${n(bg.clientes)})` : null,
+                    calc: (bg, er) => er.ventas != null && bg.clientes != null && er.ventas !== 0
+                        ? parseFloat((365 / (er.ventas / bg.clientes)).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${Math.round(v)} días` : "—",
+                    lo: 30, hi: 60, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 30 ? "Cobro ágil" : v <= 60 ? "Cobro normal" : "Cobro lento",
                 },
                 {
-                    key: "rotacionInv", label: "Rotación inventarios",
-                    formulaLabel: "Costo de Venta / Inventarios",
-                    getVals: (bg, er) => er.costoVenta != null && bg.inventarios != null
-                        ? `${n(er.costoVenta)} / ${n(bg.inventarios)}` : null,
-                    calc: (bg, er) => er.costoVenta != null && bg.inventarios != null && bg.inventarios !== 0
-                        ? parseFloat((er.costoVenta / bg.inventarios).toFixed(2)) : null,
-                    fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
-                    lo: 4, hi: 8, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v >= 8 ? "Rotación alta" : v >= 4 ? "Rotación normal" : "Rotación baja",
+                    key: "rotacionCxP", label: "Rot. Cuentas x Pagar",
+                    formulaLabel: "(Proveedores / Costo de Venta) × 365",
+                    getVals: (bg, er) => bg.proveedores != null && er.costoVenta != null
+                        ? `(${n(bg.proveedores)} / ${n(er.costoVenta)}) × 365` : null,
+                    calc: (bg, er) => bg.proveedores != null && er.costoVenta != null && er.costoVenta !== 0
+                        ? parseFloat(((bg.proveedores / er.costoVenta) * 365).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${Math.round(v)} días` : "—",
+                    lo: 30, hi: 60, goodHigh: true,
+                    interpret: (v) => v == null ? "Sin datos" : v >= 60 ? "Pago tardío" : v >= 30 ? "Pago normal" : "Pago rápido",
+                },
+                {
+                    key: "rotacionInventarios", label: "Rot. de Inventarios",
+                    formulaLabel: "(Inventarios / Costo de Venta) × 365",
+                    getVals: (bg, er) => bg.inventarios != null && er.costoVenta != null
+                        ? `(${n(bg.inventarios)} / ${n(er.costoVenta)}) × 365` : null,
+                    calc: (bg, er) => bg.inventarios != null && er.costoVenta != null && er.costoVenta !== 0
+                        ? parseFloat(((bg.inventarios / er.costoVenta) * 365).toFixed(2)) : null,
+                    fmt: (v) => v != null ? `${Math.round(v)} días` : "—",
+                    lo: 30, hi: 90, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 30 ? "Rotación alta" : v <= 90 ? "Rotación normal" : "Rotación lenta",
                 },
             ],
         },
         {
-            group: "Apalancamiento financiero", textColor: "text-blue-800", cols: "grid-cols-3",
+            group: "Apalancamiento Financiero", textColor: "text-blue-800", cols: "grid-cols-2",
             kpis: [
                 {
-                    key: "deudaTotal", label: "Razón de endeudamiento",
-                    formulaLabel: "Pasivo Total / Activos Totales",
+                    key: "deudaTotal", label: "Deuda Total",
+                    formulaLabel: "Pasivo Total / Activo Total",
                     getVals: (bg) => bg.pasivoTotal != null && bg.activoTotal != null
                         ? `${n(bg.pasivoTotal)} / ${n(bg.activoTotal)}` : null,
+                    calc: (bg) => bg.pasivoTotal != null && bg.activoTotal != null && bg.activoTotal !== 0
+                        ? parseFloat((bg.pasivoTotal / bg.activoTotal).toFixed(4)) : null,
                     fmt: (v) => v != null ? `${(v * 100).toFixed(1)}%` : "—",
                     lo: 0.40, hi: 0.60, goodHigh: false,
                     interpret: (v) => v == null ? "Sin datos" : v <= 0.40 ? "Endeudamiento bajo" : v <= 0.60 ? "Endeudamiento moderado" : "Endeudamiento alto",
                 },
                 {
-                    key: "deudaCapital", label: "Deuda / Capital",
+                    key: "deudaTotalConFin", label: "Deuda Total c/ Financiamiento",
+                    formulaLabel: monto != null ? `(PT + ${n(monto)}) / (AT + ${n(monto)})` : "Requiere monto solicitado",
+                    getVals: (bg) => monto != null && bg.pasivoTotal != null && bg.activoTotal != null
+                        ? `(${n(bg.pasivoTotal)} + ${n(monto)}) / (${n(bg.activoTotal)} + ${n(monto)})` : null,
+                    calc: (bg) => {
+                        if (monto == null || bg.pasivoTotal == null || bg.activoTotal == null) return null;
+                        const na = bg.activoTotal + monto;
+                        return na !== 0 ? parseFloat(((bg.pasivoTotal + monto) / na).toFixed(4)) : null;
+                    },
+                    fmt: (v) => v != null ? `${(v * 100).toFixed(1)}%` : "—",
+                    lo: 0.40, hi: 0.60, goodHigh: false,
+                    interpret: (v) => v == null ? (monto == null ? "Sin monto solicitado" : "Sin datos") : v <= 0.40 ? "Endeudamiento bajo" : v <= 0.60 ? "Endeudamiento moderado" : "Endeudamiento alto",
+                },
+                {
+                    key: "deudaCapital", label: "Deuda Total a Capital Contable",
                     formulaLabel: "Pasivo Total / Capital Contable",
                     getVals: (bg) => bg.pasivoTotal != null && bg.capitalContable != null
                         ? `${n(bg.pasivoTotal)} / ${n(bg.capitalContable)}` : null,
+                    calc: (bg) => {
+                        const cc = bg.capitalContable != null ? bg.capitalContable : (bg.activoTotal != null && bg.pasivoTotal != null ? bg.activoTotal - bg.pasivoTotal : null);
+                        return bg.pasivoTotal != null && cc != null && cc !== 0 ? parseFloat((bg.pasivoTotal / cc).toFixed(4)) : null;
+                    },
                     fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
                     lo: 0.50, hi: 1.0, goodHigh: false,
                     interpret: (v) => v == null ? "Sin datos" : v <= 0.50 ? "Apalancamiento bajo" : v <= 1.0 ? "Apalancamiento moderado" : "Apalancamiento alto",
                 },
                 {
-                    key: "coberturaIntereses", label: "Cobertura de intereses",
-                    formulaLabel: "Utilidad Operativa / Gastos Financieros",
-                    getVals: (_, er) => er.utilidadOperacion != null && er.gastosFinancieros != null
-                        ? `${n(er.utilidadOperacion)} / ${n(er.gastosFinancieros)}` : null,
-                    calc: (_, er) => er.utilidadOperacion != null && er.gastosFinancieros != null && er.gastosFinancieros !== 0
-                        ? parseFloat((er.utilidadOperacion / er.gastosFinancieros).toFixed(2)) : null,
+                    key: "deudaLP", label: "Deuda a Largo Plazo",
+                    formulaLabel: "Pasivo L.P. / (Activo Total − Pasivo Total)",
+                    getVals: (bg) => bg.pasivoLargoPlazo != null && bg.activoTotal != null && bg.pasivoTotal != null
+                        ? `${n(bg.pasivoLargoPlazo)} / (${n(bg.activoTotal)} − ${n(bg.pasivoTotal)})` : null,
+                    calc: (bg) => {
+                        if (bg.pasivoLargoPlazo == null || bg.activoTotal == null || bg.pasivoTotal == null) return null;
+                        const d = bg.activoTotal - bg.pasivoTotal;
+                        return d !== 0 ? parseFloat((bg.pasivoLargoPlazo / d).toFixed(4)) : null;
+                    },
                     fmt: (v) => v != null ? `${v.toFixed(2)}x` : "—",
-                    lo: 1.5, hi: 3.0, goodHigh: true,
-                    interpret: (v) => v == null ? "Sin datos" : v >= 3 ? "Cobertura alta" : v >= 1.5 ? "Cobertura adecuada" : "Cobertura baja",
+                    lo: 0.20, hi: 0.50, goodHigh: false,
+                    interpret: (v) => v == null ? "Sin datos" : v <= 0.20 ? "Deuda LP baja" : v <= 0.50 ? "Deuda LP moderada" : "Deuda LP alta",
                 },
             ],
         },
@@ -1467,19 +1564,23 @@ function TabAnalisis({ caso }: { caso: Case }) {
             group: "Rentabilidad", textColor: "text-blue-800", cols: "grid-cols-3",
             kpis: [
                 {
-                    key: "margenUtilidad", label: "Margen neto",
+                    key: "margenUtilidad", label: "Margen de Utilidad",
                     formulaLabel: "Utilidad Neta / Ventas",
                     getVals: (_, er) => er.utilidadNeta != null && er.ventas != null
                         ? `${n(er.utilidadNeta)} / ${n(er.ventas)}` : null,
+                    calc: (_, er) => er.utilidadNeta != null && er.ventas != null && er.ventas !== 0
+                        ? parseFloat((er.utilidadNeta / er.ventas).toFixed(4)) : null,
                     fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
                     lo: 0.05, hi: 0.10, goodHigh: true,
                     interpret: (v) => v == null ? "Sin datos" : v >= 0.10 ? "Margen alto" : v >= 0.05 ? "Margen moderado" : "Margen bajo",
                 },
                 {
                     key: "roa", label: "ROA",
-                    formulaLabel: "Utilidad Neta / Activos Totales",
+                    formulaLabel: "Utilidad Neta / Activo Total",
                     getVals: (bg, er) => er.utilidadNeta != null && bg.activoTotal != null
                         ? `${n(er.utilidadNeta)} / ${n(bg.activoTotal)}` : null,
+                    calc: (bg, er) => er.utilidadNeta != null && bg.activoTotal != null && bg.activoTotal !== 0
+                        ? parseFloat((er.utilidadNeta / bg.activoTotal).toFixed(4)) : null,
                     fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
                     lo: 0.02, hi: 0.05, goodHigh: true,
                     interpret: (v) => v == null ? "Sin datos" : v >= 0.05 ? "Rendimiento alto" : v >= 0.02 ? "Rendimiento moderado" : "Rendimiento bajo",
@@ -1489,6 +1590,10 @@ function TabAnalisis({ caso }: { caso: Case }) {
                     formulaLabel: "Utilidad Neta / Capital Contable",
                     getVals: (bg, er) => er.utilidadNeta != null && bg.capitalContable != null
                         ? `${n(er.utilidadNeta)} / ${n(bg.capitalContable)}` : null,
+                    calc: (bg, er) => {
+                        const cc = bg.capitalContable != null ? bg.capitalContable : (bg.activoTotal != null && bg.pasivoTotal != null ? bg.activoTotal - bg.pasivoTotal : null);
+                        return er.utilidadNeta != null && cc != null && cc !== 0 ? parseFloat((er.utilidadNeta / cc).toFixed(4)) : null;
+                    },
                     fmt: (v) => v != null ? `${(v * 100).toFixed(2)}%` : "—",
                     lo: 0.05, hi: 0.10, goodHigh: true,
                     interpret: (v) => v == null ? "Sin datos" : v >= 0.10 ? "Rendimiento alto" : v >= 0.05 ? "Rendimiento moderado" : "Rendimiento bajo",
@@ -1512,24 +1617,64 @@ function TabAnalisis({ caso }: { caso: Case }) {
                 </div>
 
                 {/* Selector de archivo */}
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-                    <span className="text-sm text-gray-500 font-medium flex-shrink-0">Archivo analizado</span>
+                <div className="px-4 py-3 border-b border-gray-100 space-y-3">
+                    {/* Toggle archivos separados */}
+                    <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+                        <div
+                            onClick={() => { const v = !separateFiles; setSeparateFiles(v); persistSel({ separateFiles: v }); }}
+                            className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${separateFiles ? "bg-blue-600" : "bg-gray-200"}`}
+                        >
+                            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${separateFiles ? "translate-x-4" : "translate-x-0"}`} />
+                        </div>
+                        <span className="text-sm text-gray-600 font-medium select-none">¿Los estados financieros están en archivos separados?</span>
+                    </label>
+
                     {allFinancialDocs.length === 0 ? (
                         <span className="text-sm text-gray-400 italic">Sin estados financieros subidos</span>
+                    ) : separateFiles ? (
+                        <div className="space-y-2">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Balance General</p>
+                                    <select
+                                        value={selectedBGDocId ?? allFinancialDocs[0]?.id ?? ""}
+                                        onChange={e => { setSelectedBGDocId(e.target.value); persistSel({ bgDocId: e.target.value }); }}
+                                        className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer w-full">
+                                        {allFinancialDocs.map((doc: any) => (
+                                            <option key={doc.id} value={doc.id}>{doc.nombre ?? `Doc ${doc.id.slice(0,6)}`}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Estado de Resultados</p>
+                                    <select
+                                        value={selectedERDocId ?? allFinancialDocs[1]?.id ?? allFinancialDocs[0]?.id ?? ""}
+                                        onChange={e => { setSelectedERDocId(e.target.value); persistSel({ erDocId: e.target.value }); }}
+                                        className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer w-full">
+                                        {allFinancialDocs.map((doc: any) => (
+                                            <option key={doc.id} value={doc.id}>{doc.nombre ?? `Doc ${doc.id.slice(0,6)}`}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                     ) : (
-                        <select
-                            value={selectedFinDocId ?? allFinancialDocs[0]?.id ?? ""}
-                            onChange={e => setSelectedFinDocId(e.target.value)}
-                            className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer flex-1 min-w-0">
-                            {allFinancialDocs.map((doc: any) => (
-                                <option key={doc.id} value={doc.id}>
-                                    {doc.nombre ?? `Doc ${doc.id.slice(0,6)}`}
-                                </option>
-                            ))}
-                        </select>
-                    )}
-                    {kpiPeriods.length > 0 && (
-                        <span className="text-sm text-blue-600 font-semibold flex-shrink-0">{kpiPeriods.join(" · ")}</span>
+                        <div className="flex items-center gap-3">
+                            <span className="text-sm text-gray-500 font-medium flex-shrink-0">Archivo analizado</span>
+                            <select
+                                value={selectedFinDocId ?? allFinancialDocs[0]?.id ?? ""}
+                                onChange={e => { setSelectedFinDocId(e.target.value); persistSel({ finDocId: e.target.value }); }}
+                                className="text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer flex-1 min-w-0">
+                                {allFinancialDocs.map((doc: any) => (
+                                    <option key={doc.id} value={doc.id}>
+                                        {doc.nombre ?? `Doc ${doc.id.slice(0,6)}`}
+                                    </option>
+                                ))}
+                            </select>
+                            {kpiPeriods.length > 0 && (
+                                <span className="text-sm text-blue-600 font-semibold flex-shrink-0">{kpiPeriods.join(" · ")}</span>
+                            )}
+                        </div>
                     )}
                 </div>
 
@@ -1557,18 +1702,28 @@ function TabAnalisis({ caso }: { caso: Case }) {
                                 red: "text-red-500 bg-red-100",
                                 gray: "text-gray-400 bg-gray-100",
                             };
+                            // Color cruzado: CxC vs CxP — si cobras antes de pagar es bueno (verde)
+                            const cxcKpi = KPI_GROUPS.flatMap(g => g.kpis).find(k => k.key === "rotacionCxC");
+                            const cxpKpi = KPI_GROUPS.flatMap(g => g.kpis).find(k => k.key === "rotacionCxP");
+                            const cxcVal = cxcKpi?.calc?.(bgData, erData) ?? null;
+                            const cxpVal = cxpKpi?.calc?.(bgData, erData) ?? null;
+                            const cxcCxpClr: KpiColor = (cxcVal != null && cxpVal != null)
+                                ? (cxcVal < cxpVal ? "green" : "red")
+                                : "gray";
                             return KPI_GROUPS.map(({ group, textColor, cols, kpis }) => (
                                 <div key={group}>
                                     <p className={`text-xs font-black uppercase tracking-widest mb-2 ${textColor}`}>{group}</p>
                                     <div className={`grid ${cols} gap-2`}>
                                         {kpis.map((kpi) => {
                                             const vals = kpiPeriodData.map((pd: any) => {
-                                                const stored = pd.kpis?.[kpi.key] ?? null;
-                                                if (stored != null) return stored;
-                                                return kpi.calc ? kpi.calc(pd.balanceGeneral ?? {}, pd.estadoResultados ?? {}) : null;
+                                                // Preferir cálculo fresco cuando hay fórmula definida,
+                                                // así los cambios de fórmula se reflejan sin reprocessar la DB
+                                                if (kpi.calc) return kpi.calc(pd.balanceGeneral ?? {}, pd.estadoResultados ?? {});
+                                                return pd.kpis?.[kpi.key] ?? null;
                                             });
                                             const lastVal = vals[vals.length - 1];
-                                            const clr = kpiColor(lastVal, kpi.lo, kpi.hi, kpi.goodHigh);
+                                            const isCxCxP = kpi.key === "rotacionCxC" || kpi.key === "rotacionCxP";
+                                            const clr = isCxCxP ? cxcCxpClr : kpiColor(lastVal, kpi.lo, kpi.hi, kpi.goodHigh);
                                             const formulaWithVals = kpi.getVals(bgData, erData);
                                             const interpretation = kpi.interpret(lastVal);
                                             return (
@@ -1616,6 +1771,65 @@ function TabAnalisis({ caso }: { caso: Case }) {
                 <div className="flex-1 h-px bg-gray-200" />
             </div>
 
+            {/* ── Calificación final ──────────────────────────────── */}
+            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-4 pt-4 pb-2">
+                    <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Resultado de la Evaluación</p>
+
+                    {/* Barra total con zonas */}
+                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden mb-1">
+                        <div className="absolute inset-y-0 bg-red-200/70"     style={{ left: 0,                        width: `${(60/maxPuntos)*100}%` }} />
+                        <div className="absolute inset-y-0 bg-amber-200/70"   style={{ left: `${(60/maxPuntos)*100}%`, width: `${(20/maxPuntos)*100}%` }} />
+                        <div className="absolute inset-y-0 bg-emerald-200/70" style={{ left: `${(80/maxPuntos)*100}%`, right: 0 }} />
+                        <div className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${resClr.bg}`}
+                            style={{ width: `${Math.min((totalPuntos/maxPuntos)*100, 100)}%` }} />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-400 mb-4">
+                        <span className="text-red-400">Rechazado &lt;60</span>
+                        <span className="text-amber-500">Dudoso 60–79</span>
+                        <span className="text-emerald-500">Aprobado ≥80</span>
+                    </div>
+
+                    {/* Mini barras por sección */}
+                    <div className="grid grid-cols-4 gap-2 mb-4">
+                        {sectionScores.map((sc, i) => {
+                            const sec = MATRIX_SECTIONS[i];
+                            const pct = sc.maxPts > 0 ? (sc.pts / sc.maxPts) * 100 : 0;
+                            const clr = sectionColors[sec.color as string];
+                            return (
+                                <div key={sc.id} className="bg-gray-50 rounded-lg px-2.5 py-2">
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <span className="text-xs text-gray-500 font-semibold truncate pr-1">{sec.nombre.split(" ").slice(0, 2).join(" ")}</span>
+                                        <span className="text-xs font-bold text-gray-700 flex-shrink-0">{sc.pts}<span className="text-gray-400 font-normal">/{sc.maxPts}</span></span>
+                                    </div>
+                                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                        <div className={`h-1.5 rounded-full ${clr.dot} transition-all`} style={{ width: `${pct}%` }} />
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Resolución */}
+                <div className={`px-4 py-3 flex items-center gap-4 border-t ${resClr.light} ${resClr.border}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black ${resClr.text} bg-white/70 flex-shrink-0 border ${resClr.border}`}>
+                        {resolucion === "Aprobado" ? "✓" : resolucion === "Dudoso" ? "⚠" : "✕"}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-black ${resClr.text}`}>{resolucion}</p>
+                        <p className={`text-sm mt-0.5 ${resClr.desc}`}>
+                            {resolucion === "Aprobado" && "Ponderación ≥80 pts — cumple criterios para aprobación."}
+                            {resolucion === "Dudoso"   && "Ponderación 60–79 pts — requiere dictamen adicional del Comité de Crédito."}
+                            {resolucion === "Rechazado"&& "Ponderación <60 pts — no cumple los criterios mínimos."}
+                        </p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                        <p className={`text-3xl font-black tabular-nums ${resClr.text}`}>{totalPuntos}</p>
+                        <p className="text-sm text-gray-400">de {maxPuntos} pts</p>
+                    </div>
+                </div>
+            </div>
 
             {/* ── Secciones de la matriz ───────────────────────────── */}
             {MATRIX_SECTIONS.map(section => {
@@ -1672,65 +1886,6 @@ function TabAnalisis({ caso }: { caso: Case }) {
                 );
             })}
 
-            {/* ── Calificación final ──────────────────────────────── */}
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                <div className="px-4 pt-4 pb-2">
-                    <p className="text-xs font-black uppercase tracking-widest text-gray-400 mb-3">Resultado de la Evaluación</p>
-
-                    {/* Barra total con zonas */}
-                    <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden mb-1">
-                        <div className="absolute inset-y-0 bg-red-200/70"     style={{ left: 0,                        width: `${(75/maxPuntos)*100}%` }} />
-                        <div className="absolute inset-y-0 bg-amber-200/70"   style={{ left: `${(75/maxPuntos)*100}%`, width: `${(45/maxPuntos)*100}%` }} />
-                        <div className="absolute inset-y-0 bg-emerald-200/70" style={{ left: `${(120/maxPuntos)*100}%`, right: 0 }} />
-                        <div className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${resClr.bg}`}
-                            style={{ width: `${Math.min((totalPuntos/maxPuntos)*100, 100)}%` }} />
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-400 mb-4">
-                        <span className="text-red-400">Rechazado &lt;75</span>
-                        <span className="text-amber-500">Dudoso 75–119</span>
-                        <span className="text-emerald-500">Aprobado ≥120</span>
-                    </div>
-
-                    {/* Mini barras por sección */}
-                    <div className="grid grid-cols-4 gap-2 mb-4">
-                        {sectionScores.map((sc, i) => {
-                            const sec = MATRIX_SECTIONS[i];
-                            const pct = sc.maxPts > 0 ? (sc.pts / sc.maxPts) * 100 : 0;
-                            const clr = sectionColors[sec.color as string];
-                            return (
-                                <div key={sc.id} className="bg-gray-50 rounded-lg px-2.5 py-2">
-                                    <div className="flex items-center justify-between mb-1.5">
-                                        <span className="text-xs text-gray-500 font-semibold truncate pr-1">{sec.nombre.split(" ").slice(0, 2).join(" ")}</span>
-                                        <span className="text-xs font-bold text-gray-700 flex-shrink-0">{sc.pts}<span className="text-gray-400 font-normal">/{sc.maxPts}</span></span>
-                                    </div>
-                                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                        <div className={`h-1.5 rounded-full ${clr.dot} transition-all`} style={{ width: `${pct}%` }} />
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-
-                {/* Resolución */}
-                <div className={`px-4 py-3 flex items-center gap-4 border-t ${resClr.light} ${resClr.border}`}>
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-lg font-black ${resClr.text} bg-white/70 flex-shrink-0 border ${resClr.border}`}>
-                        {resolucion === "Aprobado" ? "✓" : resolucion === "Dudoso" ? "⚠" : "✕"}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-black ${resClr.text}`}>{resolucion}</p>
-                        <p className={`text-sm mt-0.5 ${resClr.desc}`}>
-                            {resolucion === "Aprobado" && "Ponderación ≥120 pts — cumple criterios para aprobación."}
-                            {resolucion === "Dudoso"   && "Ponderación 75–119 pts — requiere dictamen adicional."}
-                            {resolucion === "Rechazado"&& "Ponderación <75 pts — no cumple los criterios mínimos."}
-                        </p>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                        <p className={`text-3xl font-black tabular-nums ${resClr.text}`}>{totalPuntos}</p>
-                        <p className="text-sm text-gray-400">de {maxPuntos} pts</p>
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }
@@ -2140,22 +2295,12 @@ const TABS = [
     { id: "documentos", label: "Documentos", icon: FileText },
     { id: "analisis", label: "Análisis", icon: BarChart2 },
     { id: "financiamiento", label: "Financiamiento", icon: Building2 },
-    { id: "historial", label: "Historial", icon: Clock },
 ];
 
 function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void; onUpdate?: (updated: Case) => void }) {
     const [activeTab, setActiveTab] = useState("resumen");
-    const [showRechazo, setShowRechazo] = useState(false);
-
     return (
         <div>
-            {showRechazo && (
-                <RechazoModal
-                    caso={caso}
-                    onClose={() => setShowRechazo(false)}
-                    onRechazado={updated => { onUpdate?.(updated); setShowRechazo(false); }}
-                />
-            )}
 
             {/* Breadcrumb + acciones */}
             <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
@@ -2167,19 +2312,6 @@ function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void
                     <span className="text-sm text-gray-700 font-medium">{caso.cliente}</span>
                     <span className="text-sm text-gray-400 font-mono">· {caso.folio}</span>
                 </div>
-                {caso.situacion !== "Rechazado" && caso.situacion !== "Cerrado" && (
-                    <button
-                        onClick={() => setShowRechazo(true)}
-                        className="flex items-center gap-1.5 text-xs font-semibold text-red-600 border border-red-200 bg-white px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
-                    >
-                        <XCircle className="w-3.5 h-3.5" />Rechazar caso
-                    </button>
-                )}
-                {caso.situacion === "Rechazado" && (
-                    <span className="flex items-center gap-1.5 text-xs font-semibold text-red-700 bg-red-100 px-3 py-1.5 rounded-lg">
-                        <Ban className="w-3.5 h-3.5" />Caso rechazado
-                    </span>
-                )}
             </div>
 
             {/* Tab bar */}
@@ -2203,7 +2335,6 @@ function CaseDetail({ caso, onBack, onUpdate }: { caso: Case; onBack: () => void
             {activeTab === "documentos" && <TabDocumentos caso={caso} onUpdate={onUpdate} />}
             {activeTab === "analisis" && <TabAnalisis caso={caso} />}
             {activeTab === "financiamiento" && <TabFinanciamiento caso={caso} />}
-            {activeTab === "historial" && <TabHistorial caso={caso} />}
         </div>
     );
 }
